@@ -99,11 +99,11 @@ sans toucher a son echelle.
 ### Tete et corps
 
 Le cube pilotable (`hexapod_v6:pod`) est la **tete**. `hexapod_v6.body_count`
-(5 par defaut) cubes **identiques** (meme assemblage 3x3x3 de 27 nodes,
-memes 9 relais de collision chacun -- voir "Collision" ci-dessous) sont
-ajoutes a la queue leu leu derriere elle, colles face contre face (aucun
-espace entre deux cubes consecutifs, cf. `hexapod_v6.segment_z`) : c'est le
-**corps**.
+(7 par defaut -- voir "Pattes" ci-dessous pour la raison de ce nombre)
+cubes **identiques** (meme assemblage 3x3x3 de 27 nodes, memes 9 relais de
+collision chacun -- voir "Collision" ci-dessous) sont ajoutes a la queue
+leu leu derriere elle, colles face contre face (aucun espace entre deux
+cubes consecutifs, cf. `hexapod_v6.segment_z`) : c'est le **corps**.
 
 Le corps est purement visuel et solide : ces cubes ne sont **pas**
 pilotables individuellement (pas de clic droit propre, pas de camera
@@ -113,7 +113,7 @@ gardant en plus l'integralite de la collision sur chaque segment.
 
 Concretement, `hexapod_v6.spawn_blocks` et `hexapod_v6.spawn_colliders`
 ne construisent plus qu'un seul segment (la tete) mais
-`1 + hexapod_v6.body_count` (6 par defaut) : 162 blocs visuels et 54 relais
+`1 + hexapod_v6.body_count` (8 par defaut) : 216 blocs visuels et 72 relais
 de collision au total, tous attaches/repositionnes par rapport a la MEME
 entite invisible (`hexapod_v6:pod`), avec un simple decalage en Z
 supplementaire par segment (`hexapod_v6.segment_z`).
@@ -174,11 +174,25 @@ justifient de ne PAS se contenter d'une seule boite sur `pod` :
 3 paires de pattes (6 au total), **meme forme et meme position que
 `hexapod_v3`** : chaine "en L" hanche -> femur (horizontal, s'eloigne du
 cube) -> genou -> tibia (vertical, descend), attachees de part et d'autre
-d'un segment de corps sur deux (le 1er, le 3e et le 5e -- cf.
-`hexapod_v6.leg_z`), un segment restant donc libre entre deux paires,
-comme le `leg_pair_spacing` de `hexapod_v3`. Contrairement a `hexapod_v3`,
-il n'y a pas d'animation de demarche (pas demandee) : chaque piece garde
-une position fixe.
+du 1er, du 4e et du 7e segment de corps (cf. `hexapod_v6.leg_z`), 2
+segments restant donc libres entre deux paires -- meme proportion que le
+`leg_pair_spacing` (= 3) de `hexapod_v3`. Contrairement a `hexapod_v3`, il
+n'y a pas d'animation de demarche (pas demandee) : chaque piece garde une
+position fixe.
+
+**Pourquoi 2 segments libres (et non 1) entre deux paires.** La tibia de
+chaque patte depasse d'un cube entier (`hexapod_v6.size`) vers l'avant par
+rapport a sa propre hanche (meme construction relative que `hexapod_v3`,
+juste a l'echelle d'un cube plutot que d'un node). Avec seulement 1
+segment libre entre deux paires (`hexapod_v6.body_count = 5`, pattes sur
+le 1er/3e/5e segment), cette avancee ne laissait plus qu'un coin de cube
+de marge entre la tibia d'une patte et la hanche de la suivante. Porter
+`hexapod_v6.body_count` a 7 (2 segments libres, pattes sur le 1er/4e/7e)
+donne un ecart reel EXACT de 1 cube entre la tibia d'une patte et la
+hanche de la suivante (verifie par calcul : l'ecart entre deux hanches
+est de 3 segments = 9 noeuds ; en retranchant le cube de la tibia qui
+avance et le demi-cube de chaque cote, il reste exactement `size` = 3
+noeuds de marge).
 
 Chaque piece garde son propre nom (`hexapod_v6.leg_piece_offsets` : hanche,
 femur, genou ou tibia), meme principe que `hexapod_v3:leg_joint`
@@ -203,9 +217,9 @@ la collisionbox ne tourne pas avec le yaw, et l'elargir pour compenser
 approche trop pres de la limite de portee du moteur (~3,4 noeuds). Chaque
 piece de patte est donc, elle aussi, decoupee en 9 relais par colonne
 (`hexapod_v6.column_offsets`, decale par la position de la piece) --
-378 relais de pattes (42 pieces x 9) s'ajoutent ainsi aux 54 de la tete et
-du corps, 432 au total, chacun avec une marge de ~1,6 noeud sous la limite
-du moteur, quelle que soit la rotation.
+378 relais de pattes (42 pieces x 9) s'ajoutent ainsi aux 72 de la tete et
+du corps (8 segments x 9), 450 au total, chacun avec une marge de ~1,6
+noeud sous la limite du moteur, quelle que soit la rotation.
 
 **Placement au sol.** Le hexapod est pose (`on_place`) a une hauteur de
 `hexapod_v6.leg_drop` au-dessus du point clique, et non plus
