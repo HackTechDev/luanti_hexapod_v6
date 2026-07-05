@@ -163,6 +163,14 @@ hexapod_v6.leg_hip_swing_deg = 25        -- amplitude du balayage horizontal de 
 hexapod_v6.leg_knee_lift_deg = 35        -- amplitude de la levee verticale du genou
 hexapod_v6.leg_gait_speed = math.pi * 2  -- vitesse de la phase de marche, en radians/seconde (1 cycle/s par defaut)
 
+-- Son de "pas" joue quand un groupe de pattes (cf. hexapod_v6.update_legs)
+-- repose au sol (transition levee -> posee), un seul son par groupe (donc
+-- par 3 pattes qui touchent le sol simultanement, plutot qu'un son par
+-- patte qui donnerait 3 copies superposees).
+hexapod_v6.footstep_sound = "hexapod_v6_footstep"
+hexapod_v6.footstep_sound_gain = 0.5
+hexapod_v6.footstep_sound_max_hear_distance = 16
+
 -- Decalage horizontal (X) entre le centre d'un cube (tete ou segment de
 -- corps) et le centre de la hanche collee sur son flanc -- les deux ayant
 -- la meme demi-largeur (hexapod_v6.size / 2), ce decalage vaut simplement
@@ -531,6 +539,12 @@ end
 -- IMPORTANT : la collision des pattes (hexapod_v6.collider_specs), elle,
 -- reste au repos et ne suit PAS cette animation -- exactement comme
 -- hexapod_v3 (voir hexapod_v6.leg_piece_offsets).
+--
+-- Son de pas : joue hexapod_v6.footstep_sound des qu'un groupe (1 ou 2)
+-- passe de "leve" (sin(phase) > 0, comme pour knee_deg ci-dessous) a
+-- "pose" -- un seul appel par GROUPE (donc par 3 pattes qui se posent
+-- ensemble), pas par patte individuelle, pour eviter 3 sons superposes au
+-- meme instant.
 function hexapod_v6.update_legs(self, dtime, moving)
 	if not self.leg_pivots then
 		return
@@ -538,6 +552,19 @@ function hexapod_v6.update_legs(self, dtime, moving)
 
 	if moving then
 		self.leg_phase = (self.leg_phase + hexapod_v6.leg_gait_speed * dtime) % (2 * math.pi)
+	end
+
+	for group = 1, 2 do
+		local group_phase = self.leg_phase + (group == 1 and 0 or math.pi)
+		local lifted = math.sin(group_phase) > 0
+		if self.leg_group_lifted[group] and not lifted then
+			minetest.sound_play(hexapod_v6.footstep_sound, {
+				object = self.object,
+				gain = hexapod_v6.footstep_sound_gain,
+				max_hear_distance = hexapod_v6.footstep_sound_max_hear_distance,
+			})
+		end
+		self.leg_group_lifted[group] = lifted
 	end
 
 	for _, leg in ipairs(self.leg_pivots) do
@@ -846,11 +873,13 @@ minetest.register_entity("hexapod_v6:pod", {
 	leg_anchors = nil,  -- ancres invisibles des pieces de patte, y compris les pivots (voir hexapod_v6.spawn_leg)
 	leg_pivots = nil,   -- pivots (hanche/genou) de chaque patte, pour la demarche (voir hexapod_v6.update_legs)
 	leg_phase = 0,
+	leg_group_lifted = nil,  -- etat leve/pose de chaque groupe (1 et 2), pour le son de pas (voir hexapod_v6.update_legs)
 	colliders = nil,    -- relais de collision, colonnes + pattes (voir hexapod_v6:collider)
 
 	on_activate = function(self)
 		self.object:set_acceleration({ x = 0, y = 0, z = 0 })
 		hexapod_v6.pods[self] = true
+		self.leg_group_lifted = { false, false }
 		hexapod_v6.spawn_blocks(self)
 		hexapod_v6.spawn_legs(self)
 		hexapod_v6.spawn_colliders(self)
@@ -879,6 +908,7 @@ minetest.register_entity("hexapod_v6:pod", {
 			self.leg_anchors = nil
 		end
 		self.leg_pivots = nil
+		self.leg_group_lifted = nil
 		if self.colliders then
 			for _, collider in ipairs(self.colliders) do
 				collider:remove()
