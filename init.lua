@@ -171,6 +171,12 @@ hexapod_v6.footstep_sound = "hexapod_v6_footstep"
 hexapod_v6.footstep_sound_gain = 0.5
 hexapod_v6.footstep_sound_max_hear_distance = 16
 
+-- Son de "moteur" joue en boucle tant que le hexapod avance (touche Haut),
+-- comme hexapod_v3.engine_sound.
+hexapod_v6.engine_sound = "hexapod_v6_engine"
+hexapod_v6.engine_sound_gain = 0.5
+hexapod_v6.engine_sound_max_hear_distance = 16
+
 -- Decalage horizontal (X) entre le centre d'un cube (tete ou segment de
 -- corps) et le centre de la hanche collee sur son flanc -- les deux ayant
 -- la meme demi-largeur (hexapod_v6.size / 2), ce decalage vaut simplement
@@ -642,6 +648,37 @@ function hexapod_v6.reposition_colliders(self)
 	end
 end
 
+-- Demarre/arrete un son en boucle attache au hexapod selon une condition
+-- booleenne (`active`), en se souvenant de son handle dans le champ
+-- `self[handle_field]` pour pouvoir l'arreter plus tard -- meme fonction
+-- que hexapod_v3.set_looping_sound. Le son est positionne sur l'entite
+-- (`object = self.object`) : le moteur audio du client le repositionne
+-- lui-meme a chaque image tant qu'il joue, pas besoin de le relancer pour
+-- le faire suivre le hexapod.
+function hexapod_v6.set_looping_sound(self, handle_field, active, sound_name, gain, max_hear_distance)
+	if active and not self[handle_field] then
+		self[handle_field] = minetest.sound_play(sound_name, {
+			object = self.object,
+			gain = gain,
+			max_hear_distance = max_hear_distance,
+			loop = true,
+		})
+	elseif not active and self[handle_field] then
+		minetest.sound_stop(self[handle_field])
+		self[handle_field] = nil
+	end
+end
+
+-- Joue le son de moteur tant que le hexapod avance (signed_speed
+-- strictement positif), et l'arrete des qu'il ne va plus vers l'avant
+-- (arret, marche arriere ou pivot sur place) -- comme
+-- hexapod_v3.update_engine_sound.
+function hexapod_v6.update_engine_sound(self, signed_speed)
+	hexapod_v6.set_looping_sound(self, "engine_sound_handle", signed_speed > 0,
+		hexapod_v6.engine_sound, hexapod_v6.engine_sound_gain,
+		hexapod_v6.engine_sound_max_hear_distance)
+end
+
 function hexapod_v6.start_driving(self, player)
 	local name = player:get_player_name()
 	self.driver = player
@@ -875,6 +912,7 @@ minetest.register_entity("hexapod_v6:pod", {
 	leg_phase = 0,
 	leg_group_lifted = nil,  -- etat leve/pose de chaque groupe (1 et 2), pour le son de pas (voir hexapod_v6.update_legs)
 	colliders = nil,    -- relais de collision, colonnes + pattes (voir hexapod_v6:collider)
+	engine_sound_handle = nil,
 
 	on_activate = function(self)
 		self.object:set_acceleration({ x = 0, y = 0, z = 0 })
@@ -888,6 +926,10 @@ minetest.register_entity("hexapod_v6:pod", {
 	on_deactivate = function(self)
 		if self.driver and self.driver:is_player() then
 			hexapod_v6.stop_driving(self, self.driver)
+		end
+		if self.engine_sound_handle then
+			minetest.sound_stop(self.engine_sound_handle)
+			self.engine_sound_handle = nil
 		end
 		if self.blocks then
 			for _, block in ipairs(self.blocks) do
@@ -940,6 +982,7 @@ minetest.register_entity("hexapod_v6:pod", {
 		local driver = self.driver
 		local turning = false
 		local moving = false
+		local signed_speed = 0
 
 		if driver and driver:is_player() then
 			local ctrl = driver:get_player_control()
@@ -960,9 +1003,11 @@ minetest.register_entity("hexapod_v6:pod", {
 			if ctrl.up then
 				vel = vector.multiply(dir, hexapod_v6.forward_speed)
 				moving = true
+				signed_speed = hexapod_v6.forward_speed
 			elseif ctrl.down then
 				vel = vector.multiply(dir, -hexapod_v6.forward_speed)
 				moving = true
+				signed_speed = -hexapod_v6.forward_speed
 			end
 			self.object:set_velocity(vel)
 
@@ -973,6 +1018,7 @@ minetest.register_entity("hexapod_v6:pod", {
 
 		hexapod_v6.reposition_colliders(self)
 		hexapod_v6.update_legs(self, dtime, moving or turning)
+		hexapod_v6.update_engine_sound(self, signed_speed)
 	end,
 })
 
