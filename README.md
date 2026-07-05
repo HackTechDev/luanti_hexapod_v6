@@ -36,6 +36,12 @@ chaque pas de simulation) :
 - **Gauche** : pivote vers la gauche (rotation sur place).
 - **Droite** : pivote vers la droite (rotation sur place).
 
+**Son de moteur.** Un son en boucle (`hexapod_v6.engine_sound`, repris de
+`hexapod_v3`) joue tant que le hexapod avance (**Haut**, `signed_speed`
+strictement positif), et s'arrete des qu'il ne va plus vers l'avant
+(arret, marche arriere ou pivot sur place) -- meme fonction generique
+`set_looping_sound` que `hexapod_v3.update_engine_sound`.
+
 ### Camera a la troisieme personne
 
 Des que le joueur prend les commandes :
@@ -334,6 +340,7 @@ hexapod_v6/
 │   ├── hexapod_v6_joint.png          # texture des blocs de jointure (hanche/genou)
 │   └── hexapod_v6_invisible.png      # texture transparente (pod, camera_rig, leg_anchor)
 ├── sounds/
-│   └── hexapod_v6_footstep.{1,2,3}.ogg  # son de pas (3 variantes)
+│   ├── hexapod_v6_footstep.{1,2,3}.ogg  # son de pas (3 variantes)
+│   └── hexapod_v6_engine.ogg            # son de moteur (avance)
 └── README.md
 ```
