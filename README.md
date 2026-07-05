@@ -42,6 +42,11 @@ strictement positif), et s'arrete des qu'il ne va plus vers l'avant
 (arret, marche arriere ou pivot sur place) -- meme fonction generique
 `set_looping_sound` que `hexapod_v3.update_engine_sound`.
 
+**Son de direction.** Un autre son en boucle (`hexapod_v6.turn_sound`,
+repris de `hexapod_v3`) joue tant que le hexapod pivote (**Gauche** ou
+**Droite**), que ce soit sur place ou en avancant/reculant en meme temps --
+meme fonction `set_looping_sound`, comme `hexapod_v3.update_turn_sound`.
+
 ### Camera a la troisieme personne
 
 Des que le joueur prend les commandes :
@@ -341,6 +346,7 @@ hexapod_v6/
 │   └── hexapod_v6_invisible.png      # texture transparente (pod, camera_rig, leg_anchor)
 ├── sounds/
 │   ├── hexapod_v6_footstep.{1,2,3}.ogg  # son de pas (3 variantes)
-│   └── hexapod_v6_engine.ogg            # son de moteur (avance)
+│   ├── hexapod_v6_engine.ogg            # son de moteur (avance)
+│   └── hexapod_v6_turn.ogg              # son de direction (pivote)
 └── README.md
 ```
