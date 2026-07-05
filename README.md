@@ -260,6 +260,13 @@ ci-dessous) NE suivent PAS cette animation -- ils restent a la position de
 repos (sans balancement ni levee), un choix deja fait par `hexapod_v3` et
 repris ici a l'identique.
 
+**Son de pas.** Un son (`hexapod_v6.footstep_sound`, 3 variantes reutilisees
+du "pas sur metal" du mod `default`) est joue des qu'un groupe de pattes
+passe de leve a pose (meme condition, `sin(phase) > 0`, que pour la levee
+du genou ci-dessus). Un seul appel par GROUPE -- pas par patte individuelle
+-- puisque les 3 pattes d'un groupe se posent toujours simultanement : un
+son par patte aurait produit 3 copies exactement superposees.
+
 **Collision : 9 relais par colonne et par piece, comme un segment de
 corps/tete.** A cette taille (3x3x3), une seule boite de collision par
 piece se heurterait exactement aux memes deux problemes que ceux
@@ -325,6 +332,8 @@ hexapod_v6/
 │   ├── hexapod_v6_node.png           # texture des blocs du cube (corps/tete/femur/tibia)
 │   ├── hexapod_v6_node_front.png     # texture du bloc central de la face avant
 │   ├── hexapod_v6_joint.png          # texture des blocs de jointure (hanche/genou)
-│   └── hexapod_v6_invisible.png      # texture transparente (pod, camera_rig)
+│   └── hexapod_v6_invisible.png      # texture transparente (pod, camera_rig, leg_anchor)
+├── sounds/
+│   └── hexapod_v6_footstep.{1,2,3}.ogg  # son de pas (3 variantes)
 └── README.md
 ```
