@@ -36,6 +36,22 @@ hexapod_v6.block_size = 1
 -- Taille totale du cube (cote), en noeuds.
 hexapod_v6.size = hexapod_v6.blocks_per_side * hexapod_v6.block_size
 
+-- Demi-etendue horizontale (X/Z) de la collisionbox de "hexapod_v6:pod".
+-- Le moteur ne fait JAMAIS tourner la collisionbox d'une entite avec son
+-- yaw (elle reste toujours alignee sur les axes du monde, translatee
+-- uniquement par sa position) -- alors que les 27 blocs visuels, eux,
+-- tournent bien (ils heritent de la rotation du parent via `set_attach`).
+-- Des que le cube pivote loin d'un angle multiple de 90 degres, ses coins
+-- visuels depassent donc de la collisionbox fixe : au pire (45 degres), ce
+-- depassement atteint size/2 * (sqrt(2) - 1) noeuds. On elargit donc la
+-- collisionbox a ce pire cas (size/2 * sqrt(2)) pour qu'elle contienne
+-- TOUJOURS le cube visuel, quel que soit son yaw -- au prix d'une legere
+-- marge de collision "invisible" au-dela des faces quand le cube n'est PAS
+-- pivote (a un angle multiple de 90 degres). Seul X/Z est concerne : la
+-- rotation se fait autour de l'axe Y (vertical), qui n'a donc pas besoin
+-- d'etre elargi.
+hexapod_v6.collider_half_horizontal = (hexapod_v6.size / 2) * math.sqrt(2)
+
 -- Vitesses de deplacement du hexapod
 hexapod_v6.forward_speed = 4          -- noeuds par seconde
 hexapod_v6.turn_speed = math.rad(90)  -- radians par seconde
@@ -250,8 +266,8 @@ minetest.register_entity("hexapod_v6:pod", {
 			"hexapod_v6_invisible.png", "hexapod_v6_invisible.png",
 		},
 		collisionbox = {
-			-hexapod_v6.size / 2, -hexapod_v6.size / 2, -hexapod_v6.size / 2,
-			hexapod_v6.size / 2, hexapod_v6.size / 2, hexapod_v6.size / 2,
+			-hexapod_v6.collider_half_horizontal, -hexapod_v6.size / 2, -hexapod_v6.collider_half_horizontal,
+			hexapod_v6.collider_half_horizontal, hexapod_v6.size / 2, hexapod_v6.collider_half_horizontal,
 		},
 		physical = true,
 		collide_with_objects = true,
