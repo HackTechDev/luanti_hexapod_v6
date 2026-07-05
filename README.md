@@ -130,6 +130,22 @@ relais de collision des pattes de `hexapod_v3`, PAS attachees : un objet
 attache n'a, cote serveur, pas d'autre position que celle de son parent,
 cf. `LuaEntitySAO::step`).
 
+**Piege rencontre : `set_properties` recalcule `selectionbox` par
+defaut.** Chaque relais utilise la MEME entite generique
+`hexapod_v6:collider` (declaree avec une `collisionbox` et une
+`selectionbox` nulles), a laquelle `hexapod_v6.spawn_colliders` applique
+ensuite sa propre `collisionbox` (colonne ou patte) via `set_properties`.
+Appeler `set_properties({collisionbox = ...})` SANS repreciser
+`selectionbox` dans le meme appel fait que le moteur recalcule cette
+derniere par defaut a partir de la NOUVELLE collisionbox (non nulle),
+ecrasant la `selectionbox` nulle d'origine : chaque relais redevenait donc
+cliquable, avec une grosse `selectionbox`, interceptant les clics droits
+destines a `hexapod_v6:pod` (confirme en jeu par le journal serveur :
+les clics visaient `hexapod_v6:collider` au lieu du cube, empechant de
+piloter en cliquant sur la tete). Solution : repasser explicitement
+`selectionbox = {0, 0, 0, 0, 0, 0}` dans le MEME appel a
+`set_properties`.
+
 Deux problemes, rencontres successivement en construisant ce design,
 justifient de ne PAS se contenter d'une seule boite sur `pod` :
 
