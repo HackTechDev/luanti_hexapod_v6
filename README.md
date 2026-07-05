@@ -10,12 +10,15 @@ troisieme personne**, contrairement a :
 
 ## Fonctionnement
 
-- Le mod ajoute un objet `hexapod_v6:pod` (une entite en forme de cube, pas
-  un node de la carte, pour un deplacement fluide hors grille voxel).
+- Le mod ajoute un objet `hexapod_v6:pod` : un cube de **3x3x3 nodes** (des
+  entites, pas des nodes de la carte, pour un deplacement fluide hors grille
+  voxel), compose de **27 pieces individuelles** de la taille d'un vrai node
+  (voir "Assemblage en 27 nodes" ci-dessous).
 - Un clic droit sur un bloc pose l'item `hexapod_v6:pod` qui fait apparaitre
-  l'entite pilotable a cet endroit.
-- Un clic droit sur l'entite prend les commandes. Un second clic droit du
-  meme joueur les relache.
+  l'entite pilotable a cet endroit, avec un message de confirmation indiquant
+  ses coordonnees.
+- Un clic droit sur le cube prend les commandes (avec un message de
+  confirmation). Un second clic droit du meme joueur les relache (idem).
 
 ### Pilotage du hexapod
 
@@ -63,6 +66,42 @@ positions envoyees). On deplace donc une entite Lua invisible
 ("camera_rig", sans collision) via `move_to`, et on y attache le joueur :
 sa vue herite de ce mouvement interpole.
 
+### Assemblage en 27 nodes
+
+Le cube n'est **pas** une seule entite dont la maille visuelle serait etiree
+a 3x3x3 : une texture unique etiree sur toute la face donnerait un rendu
+flou au lieu de nodes distincts. C'est a la place un assemblage de **27
+petites entites decoratives** (`hexapod_v6:block`, plus une variante
+`hexapod_v6:block_front` pour le node central de la face avant, qui indique
+la direction d'avancee), chacune de la **meme taille qu'un vrai node de la
+carte** (comme `default:stone`, 1x1x1), attachees en grille 3x3x3 a l'entite
+physique invisible (`hexapod_v6:pod`) qui porte seule la collision et le
+pilotage.
+
+**Piege rencontre en le construisant :** `hexapod_v6:pod` doit garder une
+`visual_size` **non nulle** (`{1,1,1}`), meme s'il est invisible. Les 27
+blocs lui sont attaches (`set_attach`) : cote moteur, l'echelle du parent se
+propage **multiplicativement** a tous ses descendants dans le graphe de
+scene. Une echelle nulle sur le parent (comme pour `hexapod_v6:camera_rig`,
+qui lui n'a rien d'attache) aurait donc rendu les 27 blocs invisibles,
+quelle que soit leur propre `visual_size` -- effectivement observe en jeu
+lors du premier essai. La solution, deja utilisee par `hexapod_v3:leg_pivot`
+pour la meme raison : une echelle neutre (`{1,1,1}`, qui ne deforme donc pas
+les decalages des blocs attaches, exprimes en unites de noeuds absolues) et
+une texture reellement transparente (alpha nul) pour le rendre invisible
+sans toucher a son echelle.
+
+**Collision :** une seule `collisionbox`, sur l'entite invisible `pod`,
+couvre l'intergralite du volume 3x3x3 (aucun trou, contrairement aux pattes
+de `hexapod_v3` qui depassaient du corps). Les 27 blocs decoratifs n'ont
+volontairement pas de collision propre. Une seule boite suffit ici (pas
+besoin de la decouper en plusieurs relais comme pour les pattes de
+`hexapod_v3`) car le cube entier reste petit : sa demi-diagonale
+(~2,6 noeuds) reste bien en deca de la limite de ~3,4 noeuds au-dela de
+laquelle le moteur ignore un objet pour la collision joueur/objet (limite
+mesuree depuis la position PROPRE de l'objet, cf.
+`ActiveObjectMgr::getActiveObjects`).
+
 ### A propos des touches "flechees"
 
 Luanti n'expose aux mods que l'etat des touches deja associees aux actions
@@ -101,9 +140,11 @@ alors exactement ces touches.
 
 ```
 hexapod_v6/
-├── init.lua                       # entite, item de pose, logique de pilotage et de camera
-├── mod.conf                       # declaration du mod
+├── init.lua                          # entites, item de pose, logique de pilotage et de camera
+├── mod.conf                          # declaration du mod
 ├── textures/
-│   └── hexapod_v6_node.png        # texture du hexapod
+│   ├── hexapod_v6_node.png           # texture des 27 blocs du cube
+│   ├── hexapod_v6_node_front.png     # texture du bloc central de la face avant
+│   └── hexapod_v6_invisible.png      # texture transparente (pod, camera_rig)
 └── README.md
 ```
