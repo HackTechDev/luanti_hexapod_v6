@@ -423,6 +423,15 @@ end
 -- collisionbox (`set_properties`), une meme entite generique
 -- "hexapod_v6:collider" servant aussi bien aux colonnes (hautes, fines)
 -- qu'aux pattes (petits cubes).
+--
+-- IMPORTANT : `selectionbox` est repassee explicitement a zero dans ce
+-- MEME appel a `set_properties`. Sans elle, le moteur la recalcule par
+-- defaut a partir de la NOUVELLE `collisionbox` (celle du relais, pas
+-- nulle) des que `set_properties` est appele -- ce qui annule la
+-- `selectionbox` nulle declaree dans `initial_properties` et rend chaque
+-- relais a nouveau cliquable (verifie en jeu : les clics droits pres du
+-- cube visaient les relais au lieu de "hexapod_v6:pod", empechant de
+-- piloter le hexapod en cliquant sur la tete).
 function hexapod_v6.spawn_colliders(self)
 	self.colliders = {}
 	local pod_pos = self.object:get_pos()
@@ -434,6 +443,7 @@ function hexapod_v6.spawn_colliders(self)
 				-spec.half_x, -spec.half_y, -spec.half_z,
 				spec.half_x, spec.half_y, spec.half_z,
 			},
+			selectionbox = { 0, 0, 0, 0, 0, 0 },
 		})
 		table.insert(self.colliders, collider)
 	end
