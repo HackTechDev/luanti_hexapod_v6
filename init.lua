@@ -59,7 +59,17 @@ hexapod_v6.size = hexapod_v6.blocks_per_side * hexapod_v6.block_size
 -- "corps". Purement visuel et solide -- ces cubes ne sont pas pilotables
 -- individuellement, ils suivent la tete (position ET rotation) comme un
 -- seul objet.
-hexapod_v6.body_count = 5
+--
+-- 7 (et non 5) pour laisser la place aux 3 paires de pattes espacees de 3
+-- segments (voir hexapod_v6.leg_z) : la tibia de chaque patte depasse d'un
+-- cube entier vers l'avant par rapport a son propre segment (meme
+-- construction que hexapod_v3), donc un espacement de seulement 2 segments
+-- entre deux paires (comme avec 5 segments de corps) ne laissait qu'un
+-- coin de cube de marge entre la tibia d'une patte et la hanche de la
+-- suivante -- 7 segments, avec des pattes sur le 1er, le 4e et le 7e,
+-- donnent exactement 1 cube de separation entre deux pattes, comme demande
+-- (meme proportion que hexapod_v3.leg_pair_spacing = 3).
+hexapod_v6.body_count = 7
 
 -- Decalage en Z (repere du corps a yaw = 0) de chaque segment de la file :
 -- le premier ([1]) est la tete elle-meme (decalage nul, cf.
@@ -161,11 +171,15 @@ hexapod_v6.leg_hip_offset_x = hexapod_v6.size
 hexapod_v6.leg_drop = hexapod_v6.size * (hexapod_v6.leg_tibia_height + 0.5)
 
 -- Centres en Z (repere du corps a yaw = 0) des segments qui portent une
--- paire de pattes : le 1er, le 3e et le 5e segment de corps (donc
--- segment_z[2], [4] et [6] -- segment_z[1] etant la tete elle-meme, sans
--- pattes), un segment de corps sur deux restant donc libre entre deux
--- paires -- meme motif d'alternance que hexapod_v3 (leg_pair_spacing).
-hexapod_v6.leg_z = { hexapod_v6.segment_z[2], hexapod_v6.segment_z[4], hexapod_v6.segment_z[6] }
+-- paire de pattes : le 1er, le 4e et le 7e segment de corps (donc
+-- segment_z[2], [5] et [8] -- segment_z[1] etant la tete elle-meme, sans
+-- pattes), 2 segments de corps restant donc libres entre deux paires --
+-- meme motif que hexapod_v3.leg_pair_spacing (= 3). Avec ce pas de 3
+-- segments (9 noeuds) entre deux hanches, et la tibia de chaque patte qui
+-- depasse d'un cube entier (hexapod_v6.size) vers l'avant par rapport a sa
+-- propre hanche, l'ecart reel entre la tibia d'une patte et la hanche de
+-- la suivante est exactement 1 cube (verifie : 9 - size - size = size).
+hexapod_v6.leg_z = { hexapod_v6.segment_z[2], hexapod_v6.segment_z[5], hexapod_v6.segment_z[8] }
 
 -- Decalage local {x, y, z} (repere du corps a yaw = 0) de CHAQUE piece de
 -- CHAQUE patte, avec le nom d'entite correspondant. Genere en "aplatissant"
