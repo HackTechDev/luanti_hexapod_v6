@@ -177,6 +177,12 @@ hexapod_v6.engine_sound = "hexapod_v6_engine"
 hexapod_v6.engine_sound_gain = 0.5
 hexapod_v6.engine_sound_max_hear_distance = 16
 
+-- Son de "direction" joue en boucle tant que le hexapod pivote
+-- (Gauche/Droite), comme hexapod_v3.turn_sound.
+hexapod_v6.turn_sound = "hexapod_v6_turn"
+hexapod_v6.turn_sound_gain = 0.4
+hexapod_v6.turn_sound_max_hear_distance = 16
+
 -- Decalage horizontal (X) entre le centre d'un cube (tete ou segment de
 -- corps) et le centre de la hanche collee sur son flanc -- les deux ayant
 -- la meme demi-largeur (hexapod_v6.size / 2), ce decalage vaut simplement
@@ -679,6 +685,15 @@ function hexapod_v6.update_engine_sound(self, signed_speed)
 		hexapod_v6.engine_sound_max_hear_distance)
 end
 
+-- Joue le son de direction tant que le hexapod pivote (Gauche ou Droite),
+-- que ce soit sur place ou en avancant/reculant en meme temps -- comme
+-- hexapod_v3.update_turn_sound.
+function hexapod_v6.update_turn_sound(self, turning)
+	hexapod_v6.set_looping_sound(self, "turn_sound_handle", turning,
+		hexapod_v6.turn_sound, hexapod_v6.turn_sound_gain,
+		hexapod_v6.turn_sound_max_hear_distance)
+end
+
 function hexapod_v6.start_driving(self, player)
 	local name = player:get_player_name()
 	self.driver = player
@@ -913,6 +928,7 @@ minetest.register_entity("hexapod_v6:pod", {
 	leg_group_lifted = nil,  -- etat leve/pose de chaque groupe (1 et 2), pour le son de pas (voir hexapod_v6.update_legs)
 	colliders = nil,    -- relais de collision, colonnes + pattes (voir hexapod_v6:collider)
 	engine_sound_handle = nil,
+	turn_sound_handle = nil,
 
 	on_activate = function(self)
 		self.object:set_acceleration({ x = 0, y = 0, z = 0 })
@@ -930,6 +946,10 @@ minetest.register_entity("hexapod_v6:pod", {
 		if self.engine_sound_handle then
 			minetest.sound_stop(self.engine_sound_handle)
 			self.engine_sound_handle = nil
+		end
+		if self.turn_sound_handle then
+			minetest.sound_stop(self.turn_sound_handle)
+			self.turn_sound_handle = nil
 		end
 		if self.blocks then
 			for _, block in ipairs(self.blocks) do
@@ -1019,6 +1039,7 @@ minetest.register_entity("hexapod_v6:pod", {
 		hexapod_v6.reposition_colliders(self)
 		hexapod_v6.update_legs(self, dtime, moving or turning)
 		hexapod_v6.update_engine_sound(self, signed_speed)
+		hexapod_v6.update_turn_sound(self, turning)
 	end,
 })
 
