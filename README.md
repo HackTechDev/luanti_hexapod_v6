@@ -19,8 +19,10 @@ troisieme personne**, contrairement a :
 - Un clic droit sur un bloc pose l'item `hexapod_v6:pod` qui fait apparaitre
   l'entite pilotable a cet endroit, avec un message de confirmation indiquant
   ses coordonnees.
-- Un clic droit sur le cube prend les commandes (avec un message de
-  confirmation). Un second clic droit du meme joueur les relache (idem).
+- Un clic droit sur le cube prend les commandes (message
+  "*Vous prenez les commandes du cube. Clic droit pour descendre.*"). Un
+  second clic droit du meme joueur les relache (message
+  "*Vous descendez du corps.*").
 
 ### Pilotage du hexapod
 
