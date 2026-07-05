@@ -300,7 +300,7 @@ function hexapod_v6.stop_driving(self, player)
 	end
 	self.object:set_velocity({ x = 0, y = 0, z = 0 })
 
-	minetest.chat_send_player(name, "[Hexapod] Vous quittez le cube.")
+	minetest.chat_send_player(name, "[Hexapod] Vous descendez du corps.")
 end
 
 -- Entite invisible (taille nulle) qui sert de support de camera : le
