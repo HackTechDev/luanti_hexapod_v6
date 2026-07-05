@@ -91,16 +91,54 @@ les decalages des blocs attaches, exprimes en unites de noeuds absolues) et
 une texture reellement transparente (alpha nul) pour le rendre invisible
 sans toucher a son echelle.
 
-**Collision :** une seule `collisionbox`, sur l'entite invisible `pod`,
-couvre l'intergralite du volume 3x3x3 (aucun trou, contrairement aux pattes
-de `hexapod_v3` qui depassaient du corps). Les 27 blocs decoratifs n'ont
-volontairement pas de collision propre. Une seule boite suffit ici (pas
-besoin de la decouper en plusieurs relais comme pour les pattes de
-`hexapod_v3`) car le cube entier reste petit : sa demi-diagonale
-(~2,6 noeuds) reste bien en deca de la limite de ~3,4 noeuds au-dela de
-laquelle le moteur ignore un objet pour la collision joueur/objet (limite
-mesuree depuis la position PROPRE de l'objet, cf.
-`ActiveObjectMgr::getActiveObjects`).
+**Collision : 9 relais par colonne, plutot qu'une seule boite sur `pod`.**
+`hexapod_v6:pod` lui-meme est **non physique** (`physical = false`) : il ne
+sert plus qu'au clic (piloter/descendre), via une `selectionbox` explicite
+couvrant tout le cube. La collision reelle est geree par 9 entites
+independantes (`hexapod_v6:collider`), une par colonne verticale de la
+grille 3x3 (x, z), repositionnees chaque pas sur leur colonne en tenant
+compte du yaw courant du cube (meme logique que les relais de collision des
+pattes de `hexapod_v3`, PAS attachees : un objet attache n'a, cote serveur,
+pas d'autre position que celle de son parent, cf. `LuaEntitySAO::step`).
+
+Deux problemes, rencontres successivement en construisant ce design,
+justifient de ne PAS se contenter d'une seule boite sur `pod` :
+
+1. **La collisionbox ne tourne jamais avec le yaw.** Le moteur ne fait
+   JAMAIS tourner la `collisionbox` d'une entite avec son yaw -- elle reste
+   toujours alignee sur les axes du monde, translatee uniquement par sa
+   position -- alors que les 27 blocs visuels, eux, heritent bien de la
+   rotation du parent (`set_attach`). Avec une seule boite fixe (taille du
+   cube, 3x3x3), des que le cube pivotait loin d'un angle multiple de
+   90 degres, ses coins visuels depassaient donc de la collisionbox --
+   jusqu'a `size/2 * (sqrt(2) - 1)` noeuds au pire cas (45 degres), soit
+   environ 0,62 noeud -- et aucune collision ne s'y produisait.
+
+   Premiere tentative : elargir la demi-etendue horizontale (X/Z) de cette
+   boite unique a `size/2 * sqrt(2)` (le pire cas a 45 degres), pour
+   qu'elle contienne toujours le cube visuel quel que soit son yaw.
+
+2. **Mais l'elargissement de la premiere tentative approchait une seconde
+   limite du moteur.** Une entite n'est prise en compte pour la collision
+   joueur/objet que si le joueur se trouve a moins d'environ 3,4 noeuds de
+   la position PROPRE de cette entite (limite independante de la taille de
+   sa collisionbox, cf. `ActiveObjectMgr::getActiveObjects`). Le coin le
+   plus eloigne de la boite elargie (en 3D, combinant l'elargissement
+   horizontal ET la demi-hauteur du cube) se trouvait a ~3,354 noeuds du
+   centre du pod -- a peine sous cette limite (marge de 0,05 noeud
+   seulement) : suffisant pour qu'approcher un coin en diagonale (ou un
+   coin du cube pivote) passe, en pratique, au-dela de la limite et ne
+   bloque plus du tout.
+
+   D'ou le design final, retenu : au lieu d'UNE grosse boite centree sur le
+   pod, 9 PETITS relais independants, un par colonne (empreinte 1x1,
+   elargie a `block_size/2 * sqrt(2)` pour rester valable a 45 degres, sur
+   toute la hauteur du cube). Chaque relais ne couvre que SA PROPRE colonne
+   et reste pres de l'endroit qu'il protege (repositionne chaque pas selon
+   la rotation reelle) plutot que de rester loin, au centre du cube entier
+   -- son propre coin le plus eloigne (~1,8 noeud) reste tres largement
+   sous la limite de ~3,4 noeuds (marge de ~1,6 noeud), quelle que soit la
+   rotation.
 
 ### A propos des touches "flechees"
 

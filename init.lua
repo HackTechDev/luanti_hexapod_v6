@@ -36,21 +36,56 @@ hexapod_v6.block_size = 1
 -- Taille totale du cube (cote), en noeuds.
 hexapod_v6.size = hexapod_v6.blocks_per_side * hexapod_v6.block_size
 
--- Demi-etendue horizontale (X/Z) de la collisionbox de "hexapod_v6:pod".
+-- ---------------------------------------------------------------------
+-- Collision : relais par colonne (voir hexapod_v6:collider plus bas)
+-- ---------------------------------------------------------------------
 -- Le moteur ne fait JAMAIS tourner la collisionbox d'une entite avec son
 -- yaw (elle reste toujours alignee sur les axes du monde, translatee
 -- uniquement par sa position) -- alors que les 27 blocs visuels, eux,
 -- tournent bien (ils heritent de la rotation du parent via `set_attach`).
--- Des que le cube pivote loin d'un angle multiple de 90 degres, ses coins
--- visuels depassent donc de la collisionbox fixe : au pire (45 degres), ce
--- depassement atteint size/2 * (sqrt(2) - 1) noeuds. On elargit donc la
--- collisionbox a ce pire cas (size/2 * sqrt(2)) pour qu'elle contienne
--- TOUJOURS le cube visuel, quel que soit son yaw -- au prix d'une legere
--- marge de collision "invisible" au-dela des faces quand le cube n'est PAS
--- pivote (a un angle multiple de 90 degres). Seul X/Z est concerne : la
--- rotation se fait autour de l'axe Y (vertical), qui n'a donc pas besoin
--- d'etre elargi.
-hexapod_v6.collider_half_horizontal = (hexapod_v6.size / 2) * math.sqrt(2)
+--
+-- Premiere tentative (abandonnee) : une SEULE collisionbox sur le pod,
+-- elargie a size/2 * sqrt(2) (le pire cas a 45 degres) pour contenir le
+-- cube visuel quel que soit son yaw. Ca resolvait bien le probleme de
+-- rotation, mais introduisait un second probleme : une entite n'est prise
+-- en compte pour la collision joueur/objet que si le joueur se trouve a
+-- moins d'environ 3,4 noeuds de la position PROPRE de cette entite (limite
+-- du moteur indep. de la taille de sa collisionbox, cf.
+-- `ActiveObjectMgr::getActiveObjects`) -- et le coin le plus eloigne de
+-- cette boite agrandie (en 3D, combinant l'elargissement horizontal ET la
+-- demi-hauteur du cube) se trouvait a ~3,354 noeuds du centre du pod, donc
+-- a peine sous cette limite (marge de 0,05 noeud) : suffisant pour qu'en
+-- pratique, approcher un coin en diagonale (ou un coin du cube pivote)
+-- passe intermittemment au-dela de la limite et ne bloque plus du tout
+-- (observe en jeu).
+--
+-- Solution retenue (meme principe que les relais de pattes de
+-- hexapod_v3) : au lieu d'UNE grosse boite centree sur le pod, on utilise
+-- 9 PETITS relais independants, un par colonne verticale de la grille 3x3
+-- (x,z), repositionnes chaque pas selon la rotation reelle du cube (voir
+-- hexapod_v6.reposition_colliders). Chaque relais ne couvre que SA PROPRE
+-- colonne (empreinte 1x1, elargie a block_size/2 * sqrt(2) pour rester
+-- valable a 45 degres) sur toute la hauteur du cube -- son propre coin le
+-- plus eloigne (~1,8 noeud, voir calcul plus bas) reste tres largement
+-- sous la limite de ~3,4 noeuds, quelle que soit la rotation, puisque
+-- chaque relais est repositionne pres de l'endroit qu'il protege plutot
+-- que de rester loin, au centre du cube entier.
+hexapod_v6.column_half_horizontal = (hexapod_v6.block_size / 2) * math.sqrt(2)
+
+-- Decalage local {x, z} (repere du corps a yaw = 0) de chacune des 9
+-- colonnes verticales de la grille 3x3.
+hexapod_v6.column_offsets = {}
+do
+	local half_span = (hexapod_v6.blocks_per_side - 1) / 2
+	for xi = 0, hexapod_v6.blocks_per_side - 1 do
+		for zi = 0, hexapod_v6.blocks_per_side - 1 do
+			table.insert(hexapod_v6.column_offsets, {
+				x = (xi - half_span) * hexapod_v6.block_size,
+				z = (zi - half_span) * hexapod_v6.block_size,
+			})
+		end
+	end
+end
 
 -- Vitesses de deplacement du hexapod
 hexapod_v6.forward_speed = 4          -- noeuds par seconde
@@ -138,6 +173,45 @@ function hexapod_v6.spawn_blocks(self)
 				table.insert(self.blocks, block)
 			end
 		end
+	end
+end
+
+-- Cree les 9 relais de collision (un par colonne, voir
+-- hexapod_v6.column_offsets), PAS attaches (`set_attach`) : un objet
+-- attache n'a, cote serveur, pas d'autre position que celle de son parent
+-- (cf. LuaEntitySAO::step) -- ils sont donc repositionnes chaque pas "a la
+-- main" (voir hexapod_v6.reposition_colliders), comme les relais de
+-- collision des pattes de hexapod_v3.
+function hexapod_v6.spawn_colliders(self)
+	self.colliders = {}
+	local pod_pos = self.object:get_pos()
+	for _, offset in ipairs(hexapod_v6.column_offsets) do
+		table.insert(self.colliders,
+			minetest.add_entity(vector.add(pod_pos, { x = offset.x, y = 0, z = offset.z }),
+				"hexapod_v6:collider"))
+	end
+end
+
+-- Repositionne chaque relais de collision sur sa colonne, en tenant
+-- compte de la position ET du yaw courants du cube (le decalage local
+-- {x, z} de chaque colonne est tourne en consequence). "avant" =
+-- minetest.yaw_to_dir(yaw) ; "droite" = son perpendiculaire (verifie a
+-- yaw=0 : (1,0,0)). L'axe Y n'a pas besoin d'etre tourne : la rotation se
+-- fait uniquement autour de l'axe vertical.
+function hexapod_v6.reposition_colliders(self)
+	if not self.colliders then
+		return
+	end
+	local pod_pos = self.object:get_pos()
+	local yaw = self.object:get_yaw()
+	local forward = minetest.yaw_to_dir(yaw)
+	local right = { x = math.cos(yaw), y = 0, z = math.sin(yaw) }
+	for i, collider in ipairs(self.colliders) do
+		local offset = hexapod_v6.column_offsets[i]
+		local world_offset = vector.add(
+			vector.multiply(right, offset.x),
+			vector.multiply(forward, offset.z))
+		collider:set_pos(vector.add(pod_pos, world_offset))
 	end
 end
 
@@ -240,8 +314,39 @@ minetest.register_entity("hexapod_v6:block_front", {
 	},
 })
 
--- Entite physique invisible qui porte la collision et le pilotage de tout
--- l'assemblage (voir hexapod_v6.spawn_blocks pour la partie visible).
+-- Relais de collision d'une colonne (voir hexapod_v6.column_offsets) : une
+-- entite independante (PAS attachee, voir hexapod_v6.spawn_colliders),
+-- repositionnee chaque pas sur sa colonne (hexapod_v6.reposition_colliders).
+-- `pointable = true` est essentiel : sans lui la collision joueur/objet ne
+-- se declenche jamais (meme verification empirique que
+-- `hexapod_v3:leg_collider`). `selectionbox` explicite et nulle : sans
+-- elle, un clic droit pres d'un relais viserait ce dernier plutot que le
+-- cube (via `hexapod_v6:pod`) ou le sol. Invisible (`visual_size` nulle,
+-- sans risque ici car RIEN n'est attache a un collider).
+minetest.register_entity("hexapod_v6:collider", {
+	initial_properties = {
+		visual = "cube",
+		visual_size = { x = 0, y = 0, z = 0 },
+		textures = {},
+		collisionbox = {
+			-hexapod_v6.column_half_horizontal, -hexapod_v6.size / 2, -hexapod_v6.column_half_horizontal,
+			hexapod_v6.column_half_horizontal, hexapod_v6.size / 2, hexapod_v6.column_half_horizontal,
+		},
+		selectionbox = { 0, 0, 0, 0, 0, 0 },
+		physical = true,
+		collide_with_objects = true,
+		pointable = true,
+		static_save = false,
+	},
+})
+
+-- Entite invisible qui porte le pilotage et le clic de tout l'assemblage
+-- (voir hexapod_v6.spawn_blocks pour la partie visible, et
+-- hexapod_v6:collider pour la collision reelle, geree par 9 relais
+-- independants plutot que par cette entite elle-meme -- voir plus haut
+-- pourquoi). `physical = false` : elle ne bloque donc pas le joueur
+-- elle-meme (les colliders s'en chargent), mais garde une `selectionbox`
+-- explicite couvrant tout le cube pour rester cliquable (piloter/descendre).
 --
 -- IMPORTANT : contrairement a "hexapod_v6:camera_rig" (rien ne lui est
 -- attache), `visual_size` ne doit PAS etre nul ici. Les 27 blocs sont de
@@ -266,23 +371,29 @@ minetest.register_entity("hexapod_v6:pod", {
 			"hexapod_v6_invisible.png", "hexapod_v6_invisible.png",
 		},
 		collisionbox = {
-			-hexapod_v6.collider_half_horizontal, -hexapod_v6.size / 2, -hexapod_v6.collider_half_horizontal,
-			hexapod_v6.collider_half_horizontal, hexapod_v6.size / 2, hexapod_v6.collider_half_horizontal,
+			-hexapod_v6.size / 2, -hexapod_v6.size / 2, -hexapod_v6.size / 2,
+			hexapod_v6.size / 2, hexapod_v6.size / 2, hexapod_v6.size / 2,
 		},
-		physical = true,
-		collide_with_objects = true,
+		selectionbox = {
+			-hexapod_v6.size / 2, -hexapod_v6.size / 2, -hexapod_v6.size / 2,
+			hexapod_v6.size / 2, hexapod_v6.size / 2, hexapod_v6.size / 2,
+		},
+		physical = false,
+		collide_with_objects = false,
 		pointable = true,
 		static_save = true,
 	},
 
 	driver = nil,
 	camera_rig = nil,
-	blocks = nil,  -- assemblage visuel (voir hexapod_v6.spawn_blocks)
+	blocks = nil,     -- assemblage visuel (voir hexapod_v6.spawn_blocks)
+	colliders = nil,  -- relais de collision par colonne (voir hexapod_v6:collider)
 
 	on_activate = function(self)
 		self.object:set_acceleration({ x = 0, y = 0, z = 0 })
 		hexapod_v6.pods[self] = true
 		hexapod_v6.spawn_blocks(self)
+		hexapod_v6.spawn_colliders(self)
 	end,
 
 	on_deactivate = function(self)
@@ -294,6 +405,12 @@ minetest.register_entity("hexapod_v6:pod", {
 				block:remove()
 			end
 			self.blocks = nil
+		end
+		if self.colliders then
+			for _, collider in ipairs(self.colliders) do
+				collider:remove()
+			end
+			self.colliders = nil
 		end
 		hexapod_v6.pods[self] = nil
 	end,
@@ -320,6 +437,7 @@ minetest.register_entity("hexapod_v6:pod", {
 		local driver = self.driver
 		if not driver or not driver:is_player() then
 			self.driver = nil
+			hexapod_v6.reposition_colliders(self)
 			return
 		end
 
@@ -344,6 +462,7 @@ minetest.register_entity("hexapod_v6:pod", {
 		self.object:set_velocity(vel)
 
 		hexapod_v6.update_camera(self, driver)
+		hexapod_v6.reposition_colliders(self)
 	end,
 })
 
