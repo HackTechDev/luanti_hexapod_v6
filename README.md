@@ -15,7 +15,8 @@ troisieme personne**, contrairement a :
   voxel), compose de **27 pieces individuelles** de la taille d'un vrai node
   (voir "Assemblage en 27 nodes" ci-dessous). C'est la **tete** : 5 cubes
   identiques (le **corps**) la suivent a la queue leu leu (voir "Tete et
-  corps" ci-dessous).
+  corps" ci-dessous), et 6 **pattes** (3 paires) lui sont attachees (voir
+  "Pattes" ci-dessous).
 - Un clic droit sur un bloc pose l'item `hexapod_v6:pod` qui fait apparaitre
   l'entite pilotable a cet endroit, avec un message de confirmation indiquant
   ses coordonnees.
@@ -168,6 +169,53 @@ justifient de ne PAS se contenter d'une seule boite sur `pod` :
    sous la limite de ~3,4 noeuds (marge de ~1,6 noeud), quelle que soit la
    rotation.
 
+### Pattes
+
+3 paires de pattes (6 au total), **meme forme et meme position que
+`hexapod_v3`** : chaine "en L" hanche -> femur (horizontal, s'eloigne du
+cube) -> genou -> tibia (vertical, descend), attachees de part et d'autre
+d'un segment de corps sur deux (le 1er, le 3e et le 5e -- cf.
+`hexapod_v6.leg_z`), un segment restant donc libre entre deux paires,
+comme le `leg_pair_spacing` de `hexapod_v3`. Contrairement a `hexapod_v3`,
+il n'y a pas d'animation de demarche (pas demandee) : chaque piece garde
+une position fixe.
+
+Chaque piece garde son propre nom (`hexapod_v6.leg_piece_offsets` : hanche,
+femur, genou ou tibia), meme principe que `hexapod_v3:leg_joint`
+(hanche/genou) et `hexapod_v3:leg_part` (femur/tibia), mais avec un nom
+distinct pour chacune des 4 -- comme demande.
+
+**Meme taille et meme construction que la tete et le corps.** Chaque piece
+de patte fait **3x3x3 nodes** (`hexapod_v6.size`, pas la taille d'un simple
+node) et, comme la tete et le corps, est composee d'un assemblage de **27
+blocs** plutot que d'une seule maille etiree : hanche et genou utilisent
+`hexapod_v6:block_joint` (texture de jointure) ; femur et tibia reutilisent
+`hexapod_v6:block` (texture du corps). Le nom de chaque piece
+(hanche/femur/genou/tibia) reste identifiable dans le code via
+`hexapod_v6.leg_piece_offsets`, meme si les 27 blocs qui la composent sont
+des entites generiques.
+
+**Collision : 9 relais par colonne et par piece, comme un segment de
+corps/tete.** A cette taille (3x3x3), une seule boite de collision par
+piece se heurterait exactement aux memes deux problemes que ceux
+rencontres et resolus pour le corps (voir "Collision" plus haut) :
+la collisionbox ne tourne pas avec le yaw, et l'elargir pour compenser
+approche trop pres de la limite de portee du moteur (~3,4 noeuds). Chaque
+piece de patte est donc, elle aussi, decoupee en 9 relais par colonne
+(`hexapod_v6.column_offsets`, decale par la position de la piece) --
+378 relais de pattes (42 pieces x 9) s'ajoutent ainsi aux 54 de la tete et
+du corps, 432 au total, chacun avec une marge de ~1,6 noeud sous la limite
+du moteur, quelle que soit la rotation.
+
+**Placement au sol.** Le hexapod est pose (`on_place`) a une hauteur de
+`hexapod_v6.leg_drop` au-dessus du point clique, et non plus
+`hexapod_v6.size / 2` : `leg_drop` mesure la distance entre le centre d'un
+cube (hauteur de la hanche) et la face inferieure du dernier cube de
+tibia, exactement comme `hexapod_v3.leg_drop` (meme formule, avec
+`hexapod_v6.size` a la place de `tail_size`). Sans ca, c'est le dessous du
+cube tete/corps qui aurait touche le sol, laissant les pattes s'enfoncer
+dedans.
+
 ### A propos des touches "flechees"
 
 Luanti n'expose aux mods que l'etat des touches deja associees aux actions
@@ -209,8 +257,9 @@ hexapod_v6/
 ├── init.lua                          # entites, item de pose, logique de pilotage et de camera
 ├── mod.conf                          # declaration du mod
 ├── textures/
-│   ├── hexapod_v6_node.png           # texture des 27 blocs du cube
+│   ├── hexapod_v6_node.png           # texture des blocs du cube (corps/tete/femur/tibia)
 │   ├── hexapod_v6_node_front.png     # texture du bloc central de la face avant
+│   ├── hexapod_v6_joint.png          # texture des blocs de jointure (hanche/genou)
 │   └── hexapod_v6_invisible.png      # texture transparente (pod, camera_rig)
 └── README.md
 ```
