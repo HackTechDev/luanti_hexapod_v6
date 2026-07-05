@@ -2,11 +2,8 @@
 
 Mod Luanti (Minetest) qui ajoute un hexapod pilotable au clavier de facon
 **continue et fluide**, observe depuis une **camera exterieure a la
-troisieme personne**, contrairement a :
+troisieme personne**.
 
-- `hexapod_v1` : deplacement pas a pas via un formspec ;
-- `hexapod_v2` : deplacement continu, mais le joueur est *attache* sur le
-  hexapod (camera a la premiere personne, "dans" le node).
 
 ## Fonctionnement
 
