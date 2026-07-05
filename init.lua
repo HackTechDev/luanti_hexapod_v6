@@ -23,10 +23,11 @@
 -- hexapod_v6.collider_specs), mais n'est pas pilotable individuellement :
 -- tout suit la tete comme un seul objet.
 --
--- 3 paires de pattes (6 au total, meme forme et position que hexapod_v3)
--- sont attachees de part et d'autre d'un segment de corps sur deux (voir
--- hexapod_v6.leg_piece_offsets) : chaine hanche -> femur -> genou -> tibia,
--- chaque piece gardant son propre nom d'entite et sa propre collision.
+-- 3 paires de pattes (6 au total, meme forme, position ET demarche animee
+-- que hexapod_v3) sont attachees de part et d'autre d'un segment de corps
+-- sur deux (voir hexapod_v6.spawn_legs) : chaine hanche -> femur -> genou
+-- -> tibia, chaque piece gardant sa propre collision (au repos, non
+-- animee -- voir hexapod_v6.leg_piece_offsets).
 --
 -- Note technique (camera) : la camera n'est ni le joueur teleporte a chaque
 -- pas, ni une entite deplacee via `set_pos()` (les deux forcent une
@@ -135,23 +136,32 @@ do
 end
 
 -- ---------------------------------------------------------------------
--- Pattes : 3 paires (6 pattes), meme forme et position que hexapod_v3
+-- Pattes : 3 paires (6 pattes), meme forme, position et demarche que
+-- hexapod_v3
 -- ---------------------------------------------------------------------
 -- Chaine "en L" : corps -> hanche -> femur (horizontal, s'eloigne du
 -- corps) -> genou -> tibia (vertical, descend). Chaque piece de patte est
 -- de la MEME taille que les cubes de la tete et du corps (hexapod_v6.size,
--- 3x3x3 -- pas la taille d'un simple node), et garde son nom
--- (hanche/femur/genou/tibia) via 4 entites decoratives distinctes
--- ("hexapod_v6:leg_hip", "hexapod_v6:leg_femur", "hexapod_v6:leg_knee",
--- "hexapod_v6:leg_tibia") -- meme principe que "hexapod_v3:leg_joint"
--- (hanche/genou) et "hexapod_v3:leg_part" (femur/tibia), juste avec des
--- noms distincts pour chacune des 4 pieces, comme demande. Pas d'animation
--- de demarche ici (pas demandee) : chaque piece garde une position FIXE
--- (repos), donc pas besoin d'un "hip_pivot" separe comme hexapod_v3 (rien
--- ne tourne independamment du cube entier).
+-- 3x3x3 -- pas la taille d'un simple node), et chaque piece est composee
+-- d'un assemblage de 27 blocs ("hexapod_v6:block" pour femur/tibia,
+-- "hexapod_v6:block_joint" pour hanche/genou -- voir hexapod_v6.spawn_leg).
+--
+-- Demarche animee "tripode" (comme un vrai hexapode et comme
+-- hexapod_v3.update_legs) : les 6 pattes sont reparties en 2 groupes de 3
+-- qui alternent balancement (patte levee, avance) et appui (patte au sol,
+-- recule). Pour que la rotation d'une hanche/d'un genou entraine bien tout
+-- ce qui est attache en dessous (femur+genou+tibia pour la hanche, tibia
+-- pour le genou), chaque piece de patte est un veritable enfant
+-- (`set_attach`) de la precedente -- exactement comme hexapod_v3, sauf que
+-- chaque "piece" ici est un groupe de 27 blocs attaches a une entite-ancre
+-- invisible (`hexapod_v6:leg_anchor`) plutot qu'un unique node visible.
 hexapod_v6.leg_femur_height = 2  -- nombre de cubes du femur (horizontal)
 hexapod_v6.leg_tibia_height = 3  -- nombre de cubes du tibia (vertical)
 hexapod_v6.leg_pair_count = 3    -- 3 paires = 6 pattes
+
+hexapod_v6.leg_hip_swing_deg = 25        -- amplitude du balayage horizontal de la hanche
+hexapod_v6.leg_knee_lift_deg = 35        -- amplitude de la levee verticale du genou
+hexapod_v6.leg_gait_speed = math.pi * 2  -- vitesse de la phase de marche, en radians/seconde (1 cycle/s par defaut)
 
 -- Decalage horizontal (X) entre le centre d'un cube (tete ou segment de
 -- corps) et le centre de la hanche collee sur son flanc -- les deux ayant
@@ -182,10 +192,15 @@ hexapod_v6.leg_drop = hexapod_v6.size * (hexapod_v6.leg_tibia_height + 0.5)
 hexapod_v6.leg_z = { hexapod_v6.segment_z[2], hexapod_v6.segment_z[5], hexapod_v6.segment_z[8] }
 
 -- Decalage local {x, y, z} (repere du corps a yaw = 0) de CHAQUE piece de
--- CHAQUE patte, avec le nom d'entite correspondant. Genere en "aplatissant"
--- la chaine hanche -> femur -> genou -> tibia directement en coordonnees
--- relatives au cube entier (pas de parent intermediaire, puisqu'aucune
--- piece ne tourne independamment -- cf. plus haut).
+-- CHAQUE patte AU REPOS (position neutre, sans balancement/levee), avec un
+-- nom indicatif. Genere en "aplatissant" la chaine hanche -> femur -> genou
+-- -> tibia directement en coordonnees relatives au cube entier.
+--
+-- Utilise UNIQUEMENT pour la collision (hexapod_v6.collider_specs
+-- ci-dessous) : comme hexapod_v3, la collision des pattes reste au repos
+-- et ne suit PAS l'animation de la demarche (hexapod_v6.update_legs) --
+-- seule la partie VISIBLE des pattes est animee (voir hexapod_v6.spawn_leg,
+-- qui construit une chaine hierarchique separee, animee celle-la).
 hexapod_v6.leg_piece_offsets = {}
 for _, z_center in ipairs(hexapod_v6.leg_z) do
 	for _, side in ipairs({ 1, -1 }) do
@@ -367,50 +382,175 @@ function hexapod_v6.spawn_blocks(self)
 	end
 end
 
--- Entites de patte ("hexapod_v6:leg_hip" et "hexapod_v6:leg_knee") dont les
--- pieces sont construites avec la texture de jointure plutot que la
--- texture de node -- voir hexapod_v6.spawn_legs.
-hexapod_v6.leg_joint_entities = {
-	["hexapod_v6:leg_hip"] = true,
-	["hexapod_v6:leg_knee"] = true,
-}
+-- Attache une entite-ancre invisible ("hexapod_v6:leg_anchor") a
+-- `parent_object`, avec un decalage local `offset` ({x,y,z}, en noeuds) et
+-- une rotation optionnelle. Sert soit de support a un groupe de 27 blocs
+-- (une "piece" de patte, voir hexapod_v6.spawn_leg_piece), soit de pivot
+-- pur sans bloc attache (le "hip_pivot" de hexapod_v6.spawn_leg).
+function hexapod_v6.spawn_leg_anchor(self, parent_object, parent_pos, offset, rotation)
+	local anchor = minetest.add_entity(parent_pos, "hexapod_v6:leg_anchor")
+	anchor:set_attach(parent_object, "",
+		{ x = offset.x * 10, y = offset.y * 10, z = offset.z * 10 },
+		rotation or { x = 0, y = 0, z = 0 })
+	table.insert(self.leg_anchors, anchor)
+	return anchor
+end
 
--- Construit l'assemblage visuel des 6 pattes : pour CHAQUE piece
--- (hexapod_v6.leg_piece_offsets), une grille de 27 blocs (meme principe
--- que hexapod_v6.spawn_blocks) -- chaque piece de patte est ainsi composee
--- de nodes de la taille d'un vrai node de la carte, comme la tete et le
--- corps, plutot qu'un simple cube etire. Hanche et genou utilisent
--- "hexapod_v6:block_joint" (texture de jointure) ; femur et tibia
--- utilisent "hexapod_v6:block" (texture du corps) -- le nom de la piece
--- elle-meme (hanche/femur/genou/tibia) reste identifiable via
--- hexapod_v6.leg_piece_offsets (piece.entity), qui regroupe les 27 blocs
--- de chaque piece.
-function hexapod_v6.spawn_legs(self)
-	self.legs = {}
-	local pod_object = self.object
-	local pod_pos = pod_object:get_pos()
+-- Construit une "piece" de patte (hanche, un segment de femur, genou, ou
+-- un segment de tibia) : une entite-ancre (voir hexapod_v6.spawn_leg_anchor)
+-- attachee a `parent_object` avec le decalage `offset`, portant une grille
+-- de 27 blocs (`entity_name`, meme principe que hexapod_v6.spawn_blocks) --
+-- chaque piece de patte est ainsi composee de nodes de la taille d'un vrai
+-- node de la carte, comme la tete et le corps, plutot qu'un simple cube
+-- etire. Retourne l'ancre, pour que l'appelant puisse y attacher la piece
+-- suivante de la chaine.
+function hexapod_v6.spawn_leg_piece(self, entity_name, parent_object, parent_pos, offset)
+	local anchor = hexapod_v6.spawn_leg_anchor(self, parent_object, parent_pos, offset)
 	local half_span = (hexapod_v6.blocks_per_side - 1) / 2
 
-	for _, piece in ipairs(hexapod_v6.leg_piece_offsets) do
-		local entity_name = hexapod_v6.leg_joint_entities[piece.entity]
-			and "hexapod_v6:block_joint" or "hexapod_v6:block"
-
-		for xi = 0, hexapod_v6.blocks_per_side - 1 do
-			for yi = 0, hexapod_v6.blocks_per_side - 1 do
-				for zi = 0, hexapod_v6.blocks_per_side - 1 do
-					local offset = {
-						x = piece.x + (xi - half_span) * hexapod_v6.block_size,
-						y = piece.y + (yi - half_span) * hexapod_v6.block_size,
-						z = piece.z + (zi - half_span) * hexapod_v6.block_size,
-					}
-					local part = minetest.add_entity(pod_pos, entity_name)
-					part:set_attach(pod_object, "",
-						{ x = offset.x * 10, y = offset.y * 10, z = offset.z * 10 },
-						{ x = 0, y = 0, z = 0 })
-					table.insert(self.legs, part)
-				end
+	for xi = 0, hexapod_v6.blocks_per_side - 1 do
+		for yi = 0, hexapod_v6.blocks_per_side - 1 do
+			for zi = 0, hexapod_v6.blocks_per_side - 1 do
+				local block_offset = {
+					x = (xi - half_span) * hexapod_v6.block_size,
+					y = (yi - half_span) * hexapod_v6.block_size,
+					z = (zi - half_span) * hexapod_v6.block_size,
+				}
+				local block = minetest.add_entity(parent_pos, entity_name)
+				block:set_attach(anchor, "",
+					{ x = block_offset.x * 10, y = block_offset.y * 10, z = block_offset.z * 10 },
+					{ x = 0, y = 0, z = 0 })
+				table.insert(self.leg_blocks, block)
 			end
 		end
+	end
+
+	return anchor
+end
+
+-- Construit une patte complete "en L" (hanche -> femur horizontal -> genou
+-- -> tibia vertical), suspendue sous le flanc (`side` = 1 pour droite, -1
+-- pour gauche) du cube situe a `z_center`, et assignee au groupe de
+-- demarche `group` (1 ou 2, cf. hexapod_v6.update_legs) -- meme
+-- construction chainee que hexapod_v3.spawn_leg (chaque piece est un
+-- veritable enfant de la precedente, pour qu'une rotation entraine tout ce
+-- qui est attache en dessous), sauf que chaque "piece" ici est un groupe
+-- de 27 blocs (hexapod_v6.spawn_leg_piece) plutot qu'un unique node.
+--
+-- La hanche elle-meme NE DOIT PAS bouger : le pivot qui l'anime (rotation
+-- Y = balayage avant/arriere de toute la patte) est un "hip_pivot" separe,
+-- colle exactement dessus (decalage nul). Le genou, lui, sert directement
+-- de pivot pour le tibia (rotation X = levee/pose du pied) : inutile
+-- d'avoir un pivot separe pour lui, contrairement a la hanche, puisque
+-- rien d'autre que le tibia ne depend de sa position au repos.
+function hexapod_v6.spawn_leg(self, pod_object, pod_pos, z_center, side, group)
+	local s = hexapod_v6.size
+
+	local hip_x = side * hexapod_v6.leg_hip_offset_x
+	local hanche = hexapod_v6.spawn_leg_piece(self, "hexapod_v6:block_joint", pod_object, pod_pos,
+		{ x = hip_x, y = 0, z = z_center })
+
+	-- Pivot de hanche : colle exactement sur la hanche (decalage nul),
+	-- immobile au repos ; seule sa rotation sera animee.
+	local hip_pivot = hexapod_v6.spawn_leg_anchor(self, hanche, pod_pos, { x = 0, y = 0, z = 0 })
+
+	-- Premier node de femur : colle directement sous le pivot de hanche.
+	local first_femur = hexapod_v6.spawn_leg_piece(self, "hexapod_v6:block", hip_pivot, pod_pos,
+		{ x = 0, y = -s, z = 0 })
+
+	-- Nodes de femur suivants : a l'horizontale, chaines les uns aux
+	-- autres, a la meme hauteur.
+	local femur_end = first_femur
+	for _ = 2, hexapod_v6.leg_femur_height do
+		femur_end = hexapod_v6.spawn_leg_piece(self, "hexapod_v6:block", femur_end, pod_pos,
+			{ x = side * s, y = 0, z = 0 })
+	end
+
+	local genou_offset = { x = side * s, y = 0, z = 0 }
+	local genou = hexapod_v6.spawn_leg_piece(self, "hexapod_v6:block_joint", femur_end, pod_pos, genou_offset)
+
+	-- Premier node de tibia : colle sur la face avant du genou.
+	local first_tibia = hexapod_v6.spawn_leg_piece(self, "hexapod_v6:block", genou, pod_pos,
+		{ x = 0, y = 0, z = s })
+
+	-- Nodes de tibia suivants : a la verticale, chaines les uns aux
+	-- autres, sous le premier.
+	local tibia_end = first_tibia
+	for _ = 2, hexapod_v6.leg_tibia_height do
+		tibia_end = hexapod_v6.spawn_leg_piece(self, "hexapod_v6:block", tibia_end, pod_pos,
+			{ x = 0, y = -s, z = 0 })
+	end
+
+	table.insert(self.leg_pivots, {
+		hip_pivot = hip_pivot,
+		hip_pivot_parent = hanche,
+		genou = genou,
+		genou_parent = femur_end,
+		genou_offset = genou_offset,
+		group = group,
+	})
+end
+
+-- Construit les 3 paires de pattes (hexapod_v6.leg_z), une paire par
+-- element de cette liste, en alternant le groupe de demarche paire par
+-- paire et cote par cote (cf. hexapod_v6.spawn_leg) -- meme motif que
+-- hexapod_v3.spawn_legs : deux pattes voisines (meme paire, ou meme cote
+-- sur deux paires consecutives) ne sont jamais dans le meme groupe.
+function hexapod_v6.spawn_legs(self)
+	self.leg_blocks = {}
+	self.leg_anchors = {}
+	self.leg_pivots = {}
+	local pod_object = self.object
+	local pod_pos = pod_object:get_pos()
+
+	for i, z_center in ipairs(hexapod_v6.leg_z) do
+		hexapod_v6.spawn_leg(self, pod_object, pod_pos, z_center, 1, (i % 2 == 0) and 1 or 2)   -- droite
+		hexapod_v6.spawn_leg(self, pod_object, pod_pos, z_center, -1, (i % 2 == 0) and 2 or 1)  -- gauche
+	end
+end
+
+-- Anime la demarche "tripode" des pattes : les deux groupes (1 et 2, cf.
+-- hexapod_v6.spawn_legs) sont en opposition de phase (dephasage de pi), de
+-- sorte que lorsque l'un est en balancement (patte levee, avance),
+-- l'autre est en appui (patte au sol, recule), et inversement -- exactement
+-- comme hexapod_v3.update_legs.
+--
+-- Le pivot de hanche et le genou etant attaches (`set_rotation()` est
+-- ignore sur un objet attache, cf. lua_api.md), on reanime leur rotation
+-- en rappelant `set_attach` a chaque pas avec le meme decalage de position
+-- mais une nouvelle rotation :
+-- - pivot de hanche (decalage nul, colle sur la hanche) : rotation.y
+--   (horizontale) = balayage avant/arriere de toute la patte
+--   (femur+genou+tibia, qui lui sont tous attaches en cascade), la hanche
+--   elle-meme restant immobile ;
+-- - genou : rotation.x (verticale) = levee/pose du tibia seul. La levee
+--   n'a lieu que sur la moitie "avant" du cycle (sin > 0, phase de
+--   balancement) ; le genou reste a plat (0) pendant la moitie "arriere"
+--   (phase d'appui), pour que la patte pousse au sol sans se relever.
+--
+-- IMPORTANT : la collision des pattes (hexapod_v6.collider_specs), elle,
+-- reste au repos et ne suit PAS cette animation -- exactement comme
+-- hexapod_v3 (voir hexapod_v6.leg_piece_offsets).
+function hexapod_v6.update_legs(self, dtime, moving)
+	if not self.leg_pivots then
+		return
+	end
+
+	if moving then
+		self.leg_phase = (self.leg_phase + hexapod_v6.leg_gait_speed * dtime) % (2 * math.pi)
+	end
+
+	for _, leg in ipairs(self.leg_pivots) do
+		local phase = self.leg_phase + (leg.group == 1 and 0 or math.pi)
+		local hip_deg = hexapod_v6.leg_hip_swing_deg * math.sin(phase)
+		local knee_deg = hexapod_v6.leg_knee_lift_deg * math.max(0, math.sin(phase))
+
+		leg.hip_pivot:set_attach(leg.hip_pivot_parent, "",
+			{ x = 0, y = 0, z = 0 },
+			{ x = 0, y = hip_deg, z = 0 })
+		leg.genou:set_attach(leg.genou_parent, "",
+			{ x = leg.genou_offset.x * 10, y = leg.genou_offset.y * 10, z = leg.genou_offset.z * 10 },
+			{ x = knee_deg, y = 0, z = 0 })
 	end
 end
 
@@ -595,6 +735,40 @@ minetest.register_entity("hexapod_v6:block_joint", {
 	},
 })
 
+-- Ancre invisible d'une piece de patte (voir hexapod_v6.spawn_leg_piece et
+-- hexapod_v6.spawn_leg_anchor) : porte soit les 27 blocs d'une piece
+-- (hanche, un segment de femur, genou, ou un segment de tibia), soit rien
+-- du tout quand elle sert de pivot pur (le "hip_pivot" de
+-- hexapod_v6.spawn_leg). Sa rotation est reanimee chaque pas pour la
+-- hanche et le genou (hexapod_v6.update_legs) -- exactement comme
+-- "hexapod_v3:leg_pivot".
+--
+-- IMPORTANT : `visual_size` ne doit PAS etre nul ({0,0,0}). Les 27 blocs
+-- d'une piece (et, pour le pivot de hanche, tout le reste de la patte) sont
+-- de veritables enfants (`set_attach`) de cette entite : une echelle nulle
+-- sur le parent se propage multiplicativement a tous ses descendants dans
+-- le graphe de scene, ce qui les rendrait tous invisibles quelle que soit
+-- leur propre `visual_size` (meme mecanisme que "hexapod_v6:pod" et
+-- "hexapod_v3:leg_pivot"). On utilise donc une echelle neutre ({1,1,1}) et
+-- une texture reellement transparente pour la rendre invisible sans
+-- toucher a son echelle.
+minetest.register_entity("hexapod_v6:leg_anchor", {
+	initial_properties = {
+		visual = "cube",
+		visual_size = { x = 1, y = 1, z = 1 },
+		textures = {
+			"hexapod_v6_invisible.png", "hexapod_v6_invisible.png",
+			"hexapod_v6_invisible.png", "hexapod_v6_invisible.png",
+			"hexapod_v6_invisible.png", "hexapod_v6_invisible.png",
+		},
+		physical = false,
+		collide_with_objects = false,
+		collisionbox = { 0, 0, 0, 0, 0, 0 },
+		pointable = false,
+		static_save = false,
+	},
+})
+
 -- Relais de collision d'une colonne (voir hexapod_v6.column_offsets) : une
 -- entite independante (PAS attachee, voir hexapod_v6.spawn_colliders),
 -- repositionnee chaque pas sur sa colonne (hexapod_v6.reposition_colliders).
@@ -667,9 +841,12 @@ minetest.register_entity("hexapod_v6:pod", {
 
 	driver = nil,
 	camera_rig = nil,
-	blocks = nil,     -- assemblage visuel du corps/tete (voir hexapod_v6.spawn_blocks)
-	legs = nil,       -- assemblage visuel des pattes (voir hexapod_v6.spawn_legs)
-	colliders = nil,  -- relais de collision, colonnes + pattes (voir hexapod_v6:collider)
+	blocks = nil,       -- assemblage visuel du corps/tete (voir hexapod_v6.spawn_blocks)
+	leg_blocks = nil,   -- les 27 blocs de chaque piece de patte (voir hexapod_v6.spawn_leg_piece)
+	leg_anchors = nil,  -- ancres invisibles des pieces de patte, y compris les pivots (voir hexapod_v6.spawn_leg)
+	leg_pivots = nil,   -- pivots (hanche/genou) de chaque patte, pour la demarche (voir hexapod_v6.update_legs)
+	leg_phase = 0,
+	colliders = nil,    -- relais de collision, colonnes + pattes (voir hexapod_v6:collider)
 
 	on_activate = function(self)
 		self.object:set_acceleration({ x = 0, y = 0, z = 0 })
@@ -689,12 +866,19 @@ minetest.register_entity("hexapod_v6:pod", {
 			end
 			self.blocks = nil
 		end
-		if self.legs then
-			for _, part in ipairs(self.legs) do
-				part:remove()
+		if self.leg_blocks then
+			for _, block in ipairs(self.leg_blocks) do
+				block:remove()
 			end
-			self.legs = nil
+			self.leg_blocks = nil
 		end
+		if self.leg_anchors then
+			for _, anchor in ipairs(self.leg_anchors) do
+				anchor:remove()
+			end
+			self.leg_anchors = nil
+		end
+		self.leg_pivots = nil
 		if self.colliders then
 			for _, collider in ipairs(self.colliders) do
 				collider:remove()
@@ -724,34 +908,41 @@ minetest.register_entity("hexapod_v6:pod", {
 
 	on_step = function(self, dtime)
 		local driver = self.driver
-		if not driver or not driver:is_player() then
+		local turning = false
+		local moving = false
+
+		if driver and driver:is_player() then
+			local ctrl = driver:get_player_control()
+			local yaw = self.object:get_yaw()
+
+			if ctrl.left then
+				yaw = yaw + hexapod_v6.turn_speed * dtime
+				turning = true
+			end
+			if ctrl.right then
+				yaw = yaw - hexapod_v6.turn_speed * dtime
+				turning = true
+			end
+			self.object:set_yaw(yaw)
+
+			local dir = minetest.yaw_to_dir(yaw)
+			local vel = { x = 0, y = 0, z = 0 }
+			if ctrl.up then
+				vel = vector.multiply(dir, hexapod_v6.forward_speed)
+				moving = true
+			elseif ctrl.down then
+				vel = vector.multiply(dir, -hexapod_v6.forward_speed)
+				moving = true
+			end
+			self.object:set_velocity(vel)
+
+			hexapod_v6.update_camera(self, driver)
+		else
 			self.driver = nil
-			hexapod_v6.reposition_colliders(self)
-			return
 		end
 
-		local ctrl = driver:get_player_control()
-		local yaw = self.object:get_yaw()
-
-		if ctrl.left then
-			yaw = yaw + hexapod_v6.turn_speed * dtime
-		end
-		if ctrl.right then
-			yaw = yaw - hexapod_v6.turn_speed * dtime
-		end
-		self.object:set_yaw(yaw)
-
-		local dir = minetest.yaw_to_dir(yaw)
-		local vel = { x = 0, y = 0, z = 0 }
-		if ctrl.up then
-			vel = vector.multiply(dir, hexapod_v6.forward_speed)
-		elseif ctrl.down then
-			vel = vector.multiply(dir, -hexapod_v6.forward_speed)
-		end
-		self.object:set_velocity(vel)
-
-		hexapod_v6.update_camera(self, driver)
 		hexapod_v6.reposition_colliders(self)
+		hexapod_v6.update_legs(self, dtime, moving or turning)
 	end,
 })
 
