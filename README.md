@@ -13,7 +13,9 @@ troisieme personne**, contrairement a :
 - Le mod ajoute un objet `hexapod_v6:pod` : un cube de **3x3x3 nodes** (des
   entites, pas des nodes de la carte, pour un deplacement fluide hors grille
   voxel), compose de **27 pieces individuelles** de la taille d'un vrai node
-  (voir "Assemblage en 27 nodes" ci-dessous).
+  (voir "Assemblage en 27 nodes" ci-dessous). C'est la **tete** : 5 cubes
+  identiques (le **corps**) la suivent a la queue leu leu (voir "Tete et
+  corps" ci-dessous).
 - Un clic droit sur un bloc pose l'item `hexapod_v6:pod` qui fait apparaitre
   l'entite pilotable a cet endroit, avec un message de confirmation indiquant
   ses coordonnees.
@@ -91,15 +93,39 @@ les decalages des blocs attaches, exprimes en unites de noeuds absolues) et
 une texture reellement transparente (alpha nul) pour le rendre invisible
 sans toucher a son echelle.
 
-**Collision : 9 relais par colonne, plutot qu'une seule boite sur `pod`.**
-`hexapod_v6:pod` lui-meme est **non physique** (`physical = false`) : il ne
-sert plus qu'au clic (piloter/descendre), via une `selectionbox` explicite
-couvrant tout le cube. La collision reelle est geree par 9 entites
-independantes (`hexapod_v6:collider`), une par colonne verticale de la
-grille 3x3 (x, z), repositionnees chaque pas sur leur colonne en tenant
-compte du yaw courant du cube (meme logique que les relais de collision des
-pattes de `hexapod_v3`, PAS attachees : un objet attache n'a, cote serveur,
-pas d'autre position que celle de son parent, cf. `LuaEntitySAO::step`).
+### Tete et corps
+
+Le cube pilotable (`hexapod_v6:pod`) est la **tete**. `hexapod_v6.body_count`
+(5 par defaut) cubes **identiques** (meme assemblage 3x3x3 de 27 nodes,
+memes 9 relais de collision chacun -- voir "Collision" ci-dessous) sont
+ajoutes a la queue leu leu derriere elle, colles face contre face (aucun
+espace entre deux cubes consecutifs, cf. `hexapod_v6.segment_z`) : c'est le
+**corps**.
+
+Le corps est purement visuel et solide : ces cubes ne sont **pas**
+pilotables individuellement (pas de clic droit propre, pas de camera
+dediee) -- ils suivent la tete (position ET rotation) comme un seul objet,
+exactement comme le "train arriere" decoratif de `hexapod_v3`, mais en
+gardant en plus l'integralite de la collision sur chaque segment.
+
+Concretement, `hexapod_v6.spawn_blocks` et `hexapod_v6.spawn_colliders`
+ne construisent plus qu'un seul segment (la tete) mais
+`1 + hexapod_v6.body_count` (6 par defaut) : 162 blocs visuels et 54 relais
+de collision au total, tous attaches/repositionnes par rapport a la MEME
+entite invisible (`hexapod_v6:pod`), avec un simple decalage en Z
+supplementaire par segment (`hexapod_v6.segment_z`).
+
+**Collision : 9 relais par colonne et par segment (tete + corps), plutot
+qu'une seule boite sur `pod`.** `hexapod_v6:pod` lui-meme est **non
+physique** (`physical = false`) : il ne sert plus qu'au clic
+(piloter/descendre), via une `selectionbox` explicite couvrant la tete.
+La collision reelle est geree par des entites independantes
+(`hexapod_v6:collider`), 9 par segment (une par colonne verticale de la
+grille 3x3, x/z), repositionnees chaque pas sur leur colonne en tenant
+compte de la position et du yaw courants du cube (meme logique que les
+relais de collision des pattes de `hexapod_v3`, PAS attachees : un objet
+attache n'a, cote serveur, pas d'autre position que celle de son parent,
+cf. `LuaEntitySAO::step`).
 
 Deux problemes, rencontres successivement en construisant ce design,
 justifient de ne PAS se contenter d'une seule boite sur `pod` :
