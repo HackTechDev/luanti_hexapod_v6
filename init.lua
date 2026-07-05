@@ -15,6 +15,14 @@
 -- attachees en grille 3x3x3 a l'entite physique invisible qui porte la
 -- collision et le pilotage.
 --
+-- Le cube pilotable ("hexapod_v6:pod") est la "tete" ; hexapod_v6.body_count
+-- (5 par defaut) cubes IDENTIQUES sont ajoutes a la queue leu leu derriere
+-- elle, colles face contre face : c'est le "corps" (voir
+-- hexapod_v6.segment_z). Chaque segment de corps garde l'integralite de la
+-- collision (9 relais independants, comme la tete elle-meme, voir
+-- hexapod_v6.relay_offsets), mais n'est pas pilotable individuellement :
+-- tout suit la tete comme un seul objet.
+--
 -- Note technique (camera) : la camera n'est ni le joueur teleporte a chaque
 -- pas, ni une entite deplacee via `set_pos()` (les deux forcent une
 -- correction de position sans interpolation cote client, donc des a-coups).
@@ -35,6 +43,29 @@ hexapod_v6.block_size = 1
 
 -- Taille totale du cube (cote), en noeuds.
 hexapod_v6.size = hexapod_v6.blocks_per_side * hexapod_v6.block_size
+
+-- ---------------------------------------------------------------------
+-- "Tete" et "corps" : une file de cubes identiques derriere le pod
+-- ---------------------------------------------------------------------
+-- Le cube pilotable ("hexapod_v6:pod") est la "tete". `hexapod_v6.body_count`
+-- cubes IDENTIQUES (meme assemblage 3x3x3 de 27 nodes, memes 9 relais de
+-- collision chacun) sont ajoutes a la queue leu leu derriere elle, colles
+-- face contre face (aucun espace entre deux cubes consecutifs) : c'est le
+-- "corps". Purement visuel et solide -- ces cubes ne sont pas pilotables
+-- individuellement, ils suivent la tete (position ET rotation) comme un
+-- seul objet.
+hexapod_v6.body_count = 5
+
+-- Decalage en Z (repere du corps a yaw = 0) de chaque segment de la file :
+-- le premier ([1]) est la tete elle-meme (decalage nul, cf.
+-- hexapod_v6.spawn_blocks / hexapod_v6.spawn_colliders qui l'utilisent
+-- directement pour repositionner tout le reste), les suivants ([2] a
+-- [1 + body_count]) sont les segments de corps, chacun recule d'un cube
+-- entier (`hexapod_v6.size`) de plus que le precedent.
+hexapod_v6.segment_z = {}
+for seg = 0, hexapod_v6.body_count do
+	table.insert(hexapod_v6.segment_z, -hexapod_v6.size * seg)
+end
 
 -- ---------------------------------------------------------------------
 -- Collision : relais par colonne (voir hexapod_v6:collider plus bas)
@@ -73,7 +104,8 @@ hexapod_v6.size = hexapod_v6.blocks_per_side * hexapod_v6.block_size
 hexapod_v6.column_half_horizontal = (hexapod_v6.block_size / 2) * math.sqrt(2)
 
 -- Decalage local {x, z} (repere du corps a yaw = 0) de chacune des 9
--- colonnes verticales de la grille 3x3.
+-- colonnes verticales de la grille 3x3 d'UN SEUL cube (tete ou segment de
+-- corps).
 hexapod_v6.column_offsets = {}
 do
 	local half_span = (hexapod_v6.blocks_per_side - 1) / 2
@@ -84,6 +116,19 @@ do
 				z = (zi - half_span) * hexapod_v6.block_size,
 			})
 		end
+	end
+end
+
+-- Decalage local {x, z} de CHAQUE colonne de CHAQUE segment (tete +
+-- hexapod_v6.body_count segments de corps) : hexapod_v6.column_offsets,
+-- decale en Z par hexapod_v6.segment_z pour chaque segment -- 9 * (1 +
+-- body_count) relais au total. Utilise par hexapod_v6.spawn_colliders /
+-- hexapod_v6.reposition_colliders pour que chaque segment garde sa propre
+-- collision complete (memes 9 relais que la tete).
+hexapod_v6.relay_offsets = {}
+for _, seg_z in ipairs(hexapod_v6.segment_z) do
+	for _, col in ipairs(hexapod_v6.column_offsets) do
+		table.insert(hexapod_v6.relay_offsets, { x = col.x, z = col.z + seg_z })
 	end
 end
 
@@ -136,14 +181,17 @@ function hexapod_v6.update_camera(self, player)
 	self.camera_rig:move_to(target, true)
 end
 
--- Construit l'assemblage visuel du cube : une grille de
--- `hexapod_v6.blocks_per_side`^3 (27 par defaut) petites entites, chacune
--- de la taille d'un node standard (`hexapod_v6.block_size`), attachees
--- (`set_attach`, decalage fixe) a l'entite physique invisible
--- ("hexapod_v6:pod"). Un seul de ces blocs -- celui du centre de la face
--- avant (+Z, cf. le commentaire sur l'ordre des faces plus bas) -- utilise
+-- Construit l'assemblage visuel complet : pour la tete ET chaque segment de
+-- corps (hexapod_v6.segment_z), une grille de `hexapod_v6.blocks_per_side`^3
+-- (27 par defaut) petites entites, chacune de la taille d'un node standard
+-- (`hexapod_v6.block_size`), attachees (`set_attach`, decalage fixe) a
+-- l'entite physique invisible ("hexapod_v6:pod"). Un seul de ces blocs --
+-- celui du centre de la face avant (+Z, cf. le commentaire sur l'ordre des
+-- faces plus bas) DE LA TETE (premier segment, decalage nul) -- utilise
 -- l'entite "hexapod_v6:block_front", identique sauf sur sa propre face
--- exterieure, pour indiquer visuellement la direction d'avancee.
+-- exterieure, pour indiquer visuellement la direction d'avancee. Les
+-- segments de corps n'ont pas de bloc distinct : uniquement
+-- "hexapod_v6:block".
 --
 -- Note : la position passee a `set_attach` doit etre multipliee par 10 par
 -- rapport aux coordonnees monde (cf. section "Attachments" de lua_api.md).
@@ -153,31 +201,35 @@ function hexapod_v6.spawn_blocks(self)
 	local pod_pos = pod_object:get_pos()
 	local half_span = (hexapod_v6.blocks_per_side - 1) / 2  -- decalage (en nodes) du 1er/dernier bloc au centre
 
-	for xi = 0, hexapod_v6.blocks_per_side - 1 do
-		for yi = 0, hexapod_v6.blocks_per_side - 1 do
-			for zi = 0, hexapod_v6.blocks_per_side - 1 do
-				local offset = {
-					x = (xi - half_span) * hexapod_v6.block_size,
-					y = (yi - half_span) * hexapod_v6.block_size,
-					z = (zi - half_span) * hexapod_v6.block_size,
-				}
-				local is_front = (xi == math.floor(hexapod_v6.blocks_per_side / 2))
-					and (yi == math.floor(hexapod_v6.blocks_per_side / 2))
-					and (zi == hexapod_v6.blocks_per_side - 1)
-				local entity_name = is_front and "hexapod_v6:block_front" or "hexapod_v6:block"
+	for seg_index, seg_z in ipairs(hexapod_v6.segment_z) do
+		for xi = 0, hexapod_v6.blocks_per_side - 1 do
+			for yi = 0, hexapod_v6.blocks_per_side - 1 do
+				for zi = 0, hexapod_v6.blocks_per_side - 1 do
+					local offset = {
+						x = (xi - half_span) * hexapod_v6.block_size,
+						y = (yi - half_span) * hexapod_v6.block_size,
+						z = (zi - half_span) * hexapod_v6.block_size + seg_z,
+					}
+					local is_front = (seg_index == 1)
+						and (xi == math.floor(hexapod_v6.blocks_per_side / 2))
+						and (yi == math.floor(hexapod_v6.blocks_per_side / 2))
+						and (zi == hexapod_v6.blocks_per_side - 1)
+					local entity_name = is_front and "hexapod_v6:block_front" or "hexapod_v6:block"
 
-				local block = minetest.add_entity(pod_pos, entity_name)
-				block:set_attach(pod_object, "",
-					{ x = offset.x * 10, y = offset.y * 10, z = offset.z * 10 },
-					{ x = 0, y = 0, z = 0 })
-				table.insert(self.blocks, block)
+					local block = minetest.add_entity(pod_pos, entity_name)
+					block:set_attach(pod_object, "",
+						{ x = offset.x * 10, y = offset.y * 10, z = offset.z * 10 },
+						{ x = 0, y = 0, z = 0 })
+					table.insert(self.blocks, block)
+				end
 			end
 		end
 	end
 end
 
--- Cree les 9 relais de collision (un par colonne, voir
--- hexapod_v6.column_offsets), PAS attaches (`set_attach`) : un objet
+-- Cree les relais de collision -- 9 par segment (un par colonne, voir
+-- hexapod_v6.column_offsets), pour la tete ET chaque segment de corps, soit
+-- hexapod_v6.relay_offsets au total. PAS attaches (`set_attach`) : un objet
 -- attache n'a, cote serveur, pas d'autre position que celle de son parent
 -- (cf. LuaEntitySAO::step) -- ils sont donc repositionnes chaque pas "a la
 -- main" (voir hexapod_v6.reposition_colliders), comme les relais de
@@ -185,19 +237,19 @@ end
 function hexapod_v6.spawn_colliders(self)
 	self.colliders = {}
 	local pod_pos = self.object:get_pos()
-	for _, offset in ipairs(hexapod_v6.column_offsets) do
+	for _, offset in ipairs(hexapod_v6.relay_offsets) do
 		table.insert(self.colliders,
 			minetest.add_entity(vector.add(pod_pos, { x = offset.x, y = 0, z = offset.z }),
 				"hexapod_v6:collider"))
 	end
 end
 
--- Repositionne chaque relais de collision sur sa colonne, en tenant
--- compte de la position ET du yaw courants du cube (le decalage local
--- {x, z} de chaque colonne est tourne en consequence). "avant" =
--- minetest.yaw_to_dir(yaw) ; "droite" = son perpendiculaire (verifie a
--- yaw=0 : (1,0,0)). L'axe Y n'a pas besoin d'etre tourne : la rotation se
--- fait uniquement autour de l'axe vertical.
+-- Repositionne chaque relais de collision sur sa colonne (tete ou segment
+-- de corps), en tenant compte de la position ET du yaw courants du cube
+-- (le decalage local {x, z} de chaque colonne est tourne en consequence).
+-- "avant" = minetest.yaw_to_dir(yaw) ; "droite" = son perpendiculaire
+-- (verifie a yaw=0 : (1,0,0)). L'axe Y n'a pas besoin d'etre tourne : la
+-- rotation se fait uniquement autour de l'axe vertical.
 function hexapod_v6.reposition_colliders(self)
 	if not self.colliders then
 		return
@@ -207,7 +259,7 @@ function hexapod_v6.reposition_colliders(self)
 	local forward = minetest.yaw_to_dir(yaw)
 	local right = { x = math.cos(yaw), y = 0, z = math.sin(yaw) }
 	for i, collider in ipairs(self.colliders) do
-		local offset = hexapod_v6.column_offsets[i]
+		local offset = hexapod_v6.relay_offsets[i]
 		local world_offset = vector.add(
 			vector.multiply(right, offset.x),
 			vector.multiply(forward, offset.z))
