@@ -187,14 +187,12 @@ justifient de ne PAS se contenter d'une seule boite sur `pod` :
 
 ### Pattes
 
-3 paires de pattes (6 au total), **meme forme et meme position que
-`hexapod_v3`** : chaine "en L" hanche -> femur (horizontal, s'eloigne du
-cube) -> genou -> tibia (vertical, descend), attachees de part et d'autre
-du 1er, du 4e et du 7e segment de corps (cf. `hexapod_v6.leg_z`), 2
-segments restant donc libres entre deux paires -- meme proportion que le
-`leg_pair_spacing` (= 3) de `hexapod_v3`. Contrairement a `hexapod_v3`, il
-n'y a pas d'animation de demarche (pas demandee) : chaque piece garde une
-position fixe.
+3 paires de pattes (6 au total), **meme forme, meme position et meme
+demarche animee que `hexapod_v3`** : chaine "en L" hanche -> femur
+(horizontal, s'eloigne du cube) -> genou -> tibia (vertical, descend),
+attachees de part et d'autre du 1er, du 4e et du 7e segment de corps (cf.
+`hexapod_v6.leg_z`), 2 segments restant donc libres entre deux paires --
+meme proportion que le `leg_pair_spacing` (= 3) de `hexapod_v3`.
 
 **Pourquoi 2 segments libres (et non 1) entre deux paires.** La tibia de
 chaque patte depasse d'un cube entier (`hexapod_v6.size`) vers l'avant par
@@ -210,20 +208,57 @@ est de 3 segments = 9 noeuds ; en retranchant le cube de la tibia qui
 avance et le demi-cube de chaque cote, il reste exactement `size` = 3
 noeuds de marge).
 
-Chaque piece garde son propre nom (`hexapod_v6.leg_piece_offsets` : hanche,
-femur, genou ou tibia), meme principe que `hexapod_v3:leg_joint`
-(hanche/genou) et `hexapod_v3:leg_part` (femur/tibia), mais avec un nom
-distinct pour chacune des 4 -- comme demande.
-
 **Meme taille et meme construction que la tete et le corps.** Chaque piece
-de patte fait **3x3x3 nodes** (`hexapod_v6.size`, pas la taille d'un simple
-node) et, comme la tete et le corps, est composee d'un assemblage de **27
-blocs** plutot que d'une seule maille etiree : hanche et genou utilisent
-`hexapod_v6:block_joint` (texture de jointure) ; femur et tibia reutilisent
-`hexapod_v6:block` (texture du corps). Le nom de chaque piece
-(hanche/femur/genou/tibia) reste identifiable dans le code via
-`hexapod_v6.leg_piece_offsets`, meme si les 27 blocs qui la composent sont
-des entites generiques.
+de patte (hanche, femur, genou, tibia) fait **3x3x3 nodes**
+(`hexapod_v6.size`, pas la taille d'un simple node) et, comme la tete et le
+corps, est composee d'un assemblage de **27 blocs** plutot que d'une seule
+maille etiree : hanche et genou utilisent `hexapod_v6:block_joint`
+(texture de jointure) ; femur et tibia reutilisent `hexapod_v6:block`
+(texture du corps).
+
+### Demarche animee
+
+Les pattes bougent en marchant/pivotant, exactement comme
+`hexapod_v3.update_legs` : demarche **"tripode"**, les 6 pattes reparties
+en 2 groupes de 3 qui alternent balancement (patte levee, avance) et appui
+(patte au sol, recule) -- quand un groupe balance, l'autre est en appui, et
+inversement (`hexapod_v6.spawn_legs` alterne le groupe paire par paire et
+cote par cote, comme `hexapod_v3.spawn_legs`, pour que deux pattes
+voisines ne soient jamais dans le meme groupe).
+
+**Construction en chaine, comme `hexapod_v3`.** Chaque piece de patte
+(hanche, chaque segment de femur, genou, chaque segment de tibia) est une
+entite-ancre invisible (`hexapod_v6:leg_anchor`) portant ses 27 blocs, et
+chaque ancre est un veritable enfant (`set_attach`) de la precedente --
+pour qu'une rotation entraine bien tout ce qui est attache en dessous.
+Contrairement au reste du corps (attache directement, en un seul niveau,
+a `hexapod_v6:pod`), cette chaine est necessaire ICI car deux points de la
+patte doivent pouvoir tourner independamment :
+
+- un **pivot de hanche** (`hip_pivot`, colle exactement sur la hanche,
+  decalage nul) dont la rotation Y (horizontale) balaie tout le
+  femur+genou+tibia attaches en dessous -- la hanche elle-meme ne bouge
+  jamais ;
+- le **genou** lui-meme sert de pivot pour le tibia (rotation X,
+  verticale) -- pas besoin d'un pivot separe, puisque rien d'autre que le
+  tibia ne depend de sa position au repos.
+
+`hip_pivot` et `genou` etant attaches, `set_rotation()` est ignore sur eux
+(cf. lua_api.md) : leur rotation est reanimee chaque pas en rappelant
+`set_attach` avec le meme decalage de position mais une nouvelle rotation
+(`hexapod_v6.update_legs`) -- amplitude de balayage de la hanche
+`hexapod_v6.leg_hip_swing_deg` (25 degres), amplitude de levee du genou
+`hexapod_v6.leg_knee_lift_deg` (35 degres), vitesse de phase
+`hexapod_v6.leg_gait_speed` (1 cycle/seconde) -- valeurs identiques a
+`hexapod_v3`. La levee du genou n'a lieu que sur la moitie "avant" du
+cycle (phase de balancement) ; il reste a plat pendant la moitie "arriere"
+(phase d'appui), pour que la patte pousse au sol sans se relever.
+
+**La collision, elle, reste au repos.** Comme `hexapod_v3`, les relais de
+collision des pattes (`hexapod_v6.leg_piece_offsets`, voir "Collision"
+ci-dessous) NE suivent PAS cette animation -- ils restent a la position de
+repos (sans balancement ni levee), un choix deja fait par `hexapod_v3` et
+repris ici a l'identique.
 
 **Collision : 9 relais par colonne et par piece, comme un segment de
 corps/tete.** A cette taille (3x3x3), une seule boite de collision par
